@@ -1,0 +1,73 @@
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+id_rsa
+id_rsa.pub
+*.pfx
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node & Next.js
+node_modules/
+.next/
+out/
+.npm/
+.yarn/
+*.tsbuildinfo
+next-env.d.ts
+
+# Storage & Indexing Data
+data/
+indices/
+temp_repos/
+*.sqlite
+*.sqlite3
+*.db
+
+# Operating System & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Internal documentation and guides (excluded from remote repo)
+ARCHITECTURE.md
+DevMind_AI_Antigravity_Step_by_Step.md
+DevMind_AI_PRD_v1.2.md
+IMPLEMENTATION_PROGRESS.md
+
