@@ -19,6 +19,11 @@ from .git_validator import (
     validate_git_url,
     is_ip_private_or_restricted,
 )
+from .git_cloner import (
+    GitCloneError,
+    GitTimeoutError,
+    clone_and_filter_public_repo,
+)
 from .repository_manager import (
     RepositoryManager,
     repo_manager,
@@ -42,6 +47,9 @@ __all__ = [
     "GitValidationResult",
     "validate_git_url",
     "is_ip_private_or_restricted",
+    "GitCloneError",
+    "GitTimeoutError",
+    "clone_and_filter_public_repo",
     "RepositoryManager",
     "repo_manager",
 ]

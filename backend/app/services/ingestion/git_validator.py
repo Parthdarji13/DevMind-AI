@@ -47,6 +47,22 @@ def is_ip_private_or_restricted(ip_str: str) -> bool:
     """Checks whether an IP address is private, loopback, link-local, or cloud metadata."""
     try:
         ip = ipaddress.ip_address(ip_str)
+
+        # Handle RFC 6052 NAT64 Well-Known Prefix (64:ff9b::/96) used by IPv6-only DNS64 networks
+        if isinstance(ip, ipaddress.IPv6Address):
+            nat64_prefix = ipaddress.IPv6Network("64:ff9b::/96")
+            if ip in nat64_prefix:
+                v4_int = int(ip) & 0xFFFFFFFF
+                v4_ip = ipaddress.IPv4Address(v4_int)
+                return (
+                    v4_ip.is_private
+                    or v4_ip.is_loopback
+                    or v4_ip.is_link_local
+                    or v4_ip.is_multicast
+                    or v4_ip.is_reserved
+                    or v4_ip.is_unspecified
+                )
+
         return (
             ip.is_private
             or ip.is_loopback

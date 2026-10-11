@@ -1,6 +1,6 @@
 """
 Repository state management and temporary storage isolation.
-Ref: PRD Section 9, 10; Step 9 of execution guide.
+Ref: PRD Section 9, 10; Step 9 & 12 of execution guide.
 """
 from datetime import datetime, timezone
 import json
@@ -15,7 +15,9 @@ from ...models.repository import (
     SourceType,
     RepositoryStats,
     RepositorySummary,
+    IngestionProgress,
 )
+from .progress_tracker import ProgressTracker
 
 settings = get_settings()
 
@@ -44,9 +46,15 @@ class RepositoryManager:
         source_type: SourceType,
         stats: Optional[RepositoryStats] = None,
     ) -> RepositorySummary:
-        """Initializes a new isolated repository entry."""
+        """Initializes a new isolated repository entry with full progress tracking."""
         repo_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc).isoformat()
+        initial_progress = ProgressTracker.initialize_progress(
+            repo_id=repo_id,
+            repo_name=name,
+            source_type=source_type,
+        )
+
         repo = RepositorySummary(
             repo_id=repo_id,
             name=name,
@@ -54,6 +62,7 @@ class RepositoryManager:
             status=RepositoryStatus.PROCESSING,
             created_at=created_at,
             stats=stats or RepositoryStats(),
+            progress=initial_progress,
         )
         self._repositories[repo_id] = repo
         self.save_metadata(repo)
@@ -78,6 +87,19 @@ class RepositoryManager:
         meta_path = self.get_metadata_path(repo.repo_id)
         meta_path.write_text(repo.model_dump_json(indent=2), encoding="utf-8")
 
+    def update_progress(
+        self,
+        repo_id: str,
+        progress: IngestionProgress,
+    ) -> Optional[RepositorySummary]:
+        repo = self._repositories.get(repo_id)
+        if not repo:
+            return None
+        repo.progress = progress
+        repo.status = progress.overall_status
+        self.save_metadata(repo)
+        return repo
+
     def update_status(
         self,
         repo_id: str,
@@ -90,6 +112,8 @@ class RepositoryManager:
         repo.status = status
         if stats:
             repo.stats = stats
+        if repo.progress:
+            repo.progress.overall_status = status
         self.save_metadata(repo)
         return repo
 
