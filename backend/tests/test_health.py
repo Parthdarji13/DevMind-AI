@@ -30,5 +30,5 @@ def test_health_endpoint():
     assert data["version"] == "1.2.0"
     assert "storage_ready" in data
     assert "limits" in data
-    assert data["limits"]["max_zip_mb"] == 25
-    assert data["limits"]["max_files"] == 500
+    assert data["limits"]["max_zip_mb"] == 100
+    assert data["limits"]["max_files"] == 3000

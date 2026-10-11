@@ -15,21 +15,21 @@ from app.core.limits import IngestionLimits
 class TestConfigAndLimits(unittest.TestCase):
     def test_default_limits(self):
         limits = IngestionLimits()
-        self.assertEqual(limits.max_zip_mb, 25)
-        self.assertEqual(limits.max_files, 500)
-        self.assertEqual(limits.max_file_kb, 500)
+        self.assertEqual(limits.max_zip_mb, 100)
+        self.assertEqual(limits.max_files, 3000)
+        self.assertEqual(limits.max_file_kb, 1000)
         self.assertEqual(limits.retention_days, 7)
-        self.assertEqual(limits.max_zip_bytes, 25 * 1024 * 1024)
-        self.assertEqual(limits.max_file_bytes, 500 * 1024)
+        self.assertEqual(limits.max_zip_bytes, 100 * 1024 * 1024)
+        self.assertEqual(limits.max_file_bytes, 1000 * 1024)
 
     def test_limit_validation(self):
         limits = IngestionLimits()
-        self.assertTrue(limits.validate_file_size(100 * 1024))
-        self.assertFalse(limits.validate_file_size(600 * 1024))
-        self.assertTrue(limits.validate_archive_size(20 * 1024 * 1024))
-        self.assertFalse(limits.validate_archive_size(30 * 1024 * 1024))
-        self.assertTrue(limits.validate_file_count(499))
-        self.assertFalse(limits.validate_file_count(501))
+        self.assertTrue(limits.validate_file_size(500 * 1024))
+        self.assertFalse(limits.validate_file_size(1200 * 1024))
+        self.assertTrue(limits.validate_archive_size(50 * 1024 * 1024))
+        self.assertFalse(limits.validate_archive_size(110 * 1024 * 1024))
+        self.assertTrue(limits.validate_file_count(2999))
+        self.assertFalse(limits.validate_file_count(3001))
 
     def test_settings_safe_defaults(self):
         settings = Settings()

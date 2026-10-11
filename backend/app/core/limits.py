@@ -7,9 +7,9 @@ import os
 
 @dataclass(frozen=True)
 class IngestionLimits:
-    max_zip_mb: int = int(os.getenv("MAX_ZIP_MB", "25"))
-    max_files: int = int(os.getenv("MAX_FILES", "500"))
-    max_file_kb: int = int(os.getenv("MAX_FILE_KB", "500"))
+    max_zip_mb: int = int(os.getenv("MAX_ZIP_MB", "100"))
+    max_files: int = int(os.getenv("MAX_FILES", "3000"))
+    max_file_kb: int = int(os.getenv("MAX_FILE_KB", "1000"))
     retention_days: int = int(os.getenv("RETENTION_DAYS", "7"))
     git_clone_timeout_seconds: int = int(os.getenv("GIT_CLONE_TIMEOUT_SECONDS", "30"))
 

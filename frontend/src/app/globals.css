@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --canvas-bg: #F7F6F3;
+  --surface-card: #FFFFFF;
+  --border-subtle: #E5E2DB;
+  --border-focus: #0B6E5F;
+  --text-primary: #1C2024;
+  --text-muted: #636A74;
+  --teal-primary: #0B6E5F;
+  --teal-hover: #085449;
+  --teal-surface: #E6F4F1;
+  --amber-warning: #B45309;
+  --code-bg: #13171C;
+  --code-text: #E2E8F0;
+}
+
+body {
+  background-color: var(--canvas-bg);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  min-height: 100vh;
+}
+
+/* Warm paper card aesthetic */
+.paper-card {
+  background: #FFFFFF;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.paper-card-hover:hover {
+  border-color: #D3CFCA;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+/* Deep code box styling */
+.dark-code-box {
+  background: var(--code-bg);
+  color: var(--code-text);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  border: 1px solid #232931;
+  border-radius: 8px;
+}
+
+/* Micro-animations */
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-pulse-subtle {
+  animation: pulseSubtle 2.5s infinite ease-in-out;
+}

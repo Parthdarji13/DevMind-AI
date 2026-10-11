@@ -5,6 +5,21 @@ Provides safe environment defaults, type conversion, and error reporting.
 from dataclasses import dataclass, field
 from pathlib import Path
 import os
+
+try:
+    from dotenv import load_dotenv
+    # Load .env from root workspace or backend folder if present
+    _root_env = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+    _backend_env = Path(__file__).resolve().parent.parent.parent / ".env"
+    if _root_env.exists():
+        load_dotenv(_root_env)
+    elif _backend_env.exists():
+        load_dotenv(_backend_env)
+    else:
+        load_dotenv()
+except ImportError:
+    pass
+
 from .limits import IngestionLimits, DEFAULT_LIMITS
 
 
