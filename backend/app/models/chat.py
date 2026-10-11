@@ -27,6 +27,7 @@ class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000, description="User's query")
     history: list[ChatMessage] = Field(default_factory=list, description="Prior conversation context")
     max_chunks: int = Field(default=8, ge=1, le=25, description="Maximum evidence chunks to retrieve")
+    session_id: Optional[str] = Field(None, description="Optional conversation session ID")
 
 
 class ChatResponse(BaseModel):
@@ -36,3 +37,4 @@ class ChatResponse(BaseModel):
     abstained: bool = Field(default=False, description="True if evidence was insufficient to answer")
     inference_detected: bool = Field(default=False, description="True if answer includes inference markers")
     retrieved_chunks_count: int = Field(default=0, description="Number of evidence chunks provided to LLM")
+    session_id: Optional[str] = Field(None, description="Conversation session ID")
