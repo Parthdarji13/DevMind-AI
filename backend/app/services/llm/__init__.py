@@ -33,6 +33,7 @@ from .prompt import (
     validate_citations_against_chunks,
 )
 from .qa_service import QAService
+from .suggestions import SuggestionService
 
 __all__ = [
     "SYSTEM_PROMPT",
@@ -62,4 +63,5 @@ __all__ = [
     "ConversationSession",
     "RepositoryContextMismatchError",
     "QAService",
+    "SuggestionService",
 ]

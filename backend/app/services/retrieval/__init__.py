@@ -16,6 +16,13 @@ from .vector import (
     VectorSearchManager,
 )
 
+from .multilingual import (
+    detect_language,
+    expand_multilingual_query,
+    is_hinglish_query,
+    is_hindi_query,
+)
+
 __all__ = [
     "BM25Index",
     "SearchResult",
@@ -28,4 +35,8 @@ __all__ = [
     "EmbeddingNotAvailableError",
     "HybridRetriever",
     "HybridRetrievalManager",
+    "detect_language",
+    "expand_multilingual_query",
+    "is_hinglish_query",
+    "is_hindi_query",
 ]

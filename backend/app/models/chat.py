@@ -38,3 +38,22 @@ class ChatResponse(BaseModel):
     inference_detected: bool = Field(default=False, description="True if answer includes inference markers")
     retrieved_chunks_count: int = Field(default=0, description="Number of evidence chunks provided to LLM")
     session_id: Optional[str] = Field(None, description="Conversation session ID")
+
+
+class SuggestedQuestion(BaseModel):
+    """Repository-derived suggested inquiry for codebase discovery."""
+    question: str = Field(..., description="Suggested inquiry text")
+    category: str = Field(..., description="Category: Architecture, API & Routing, Data & Models, Security & Auth, or Core Logic")
+    derived_from: str = Field(..., description="File path or symbol name from which inquiry was derived")
+    is_verified: bool = Field(
+        default=False,
+        description="Explicit notice: suggestions are exploratory inquiries, verified only upon retrieval",
+    )
+
+
+class SuggestedQuestionsResponse(BaseModel):
+    """Collection of repository-derived suggested questions."""
+    repo_id: str = Field(..., description="Repository identifier")
+    suggestions: list[SuggestedQuestion] = Field(default_factory=list, description="List of repository-derived questions")
+    total_chunks_analyzed: int = Field(default=0, description="Number of indexed code chunks inspected")
+    languages_detected: list[str] = Field(default_factory=list, description="Detected programming languages")

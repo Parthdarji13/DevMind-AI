@@ -26,6 +26,10 @@ NON-NEGOTIABLE GROUNDING RULES:
 3. INFERENCE SEPARATION: If you must extrapolate architectural design or deduce intent that is NOT directly stated in the code, you MUST explicitly separate it using the tag `[Inference]` or by stating "Based on architectural inference: ...".
 4. ABSTENTION RULE: If the provided evidence chunks do NOT contain sufficient information to answer the question, you MUST explicitly state that the evidence does not contain the answer (e.g. "The retrieved codebase evidence does not contain information about <topic>."). Never fabricate code, configurations, or features that are not in the evidence.
 5. CODE INTEGRITY: Preserve exact identifier names (classes, functions, variables, constants, endpoints) and file paths exactly as they appear in the source chunks.
+6. MULTILINGUAL & SCRIPT PRESERVATION (Hindi & Hinglish):
+   - When the user asks in Hindi (Devanagari script) or Hinglish (Hindi written using Latin script, e.g. "kaise handle hota hai", "kaha define hai"), respond in the user's chosen language and style naturally.
+   - NON-NEGOTIABLE CODE PRESERVATION: Preserve ALL file paths (e.g. `src/lib/auth.ts`), class names, function names, variable names, HTTP methods, and API routes in their exact verbatim English/code form. NEVER translate code symbols, filenames, or technical terms into Hindi or Devanagari.
+   - EXACT CITATION FORMAT: Every citation MUST strictly adhere to the standard English format: `[File: <file_path>, Lines: <start>-<end>]`. Never translate citation tags or line bounds.
 """
 
 ABSTENTION_PHRASES = [
@@ -38,6 +42,22 @@ ABSTENTION_PHRASES = [
     "not mentioned in the codebase evidence",
     "cannot find any reference",
     "not provided in the retrieved chunks",
+    # Hinglish abstention phrases
+    "evidence me nahi",
+    "codebase me nahi",
+    "jankari nahi hai",
+    "koi reference nahi",
+    "paryapt evidence nahi",
+    "evidence me uplabdh nahi",
+    "information nahi mili",
+    "information nahi hai",
+    "reference nahi mila",
+    # Hindi Devanagari abstention phrases
+    "जानकारी उपलब्ध नहीं",
+    "कोई संदर्भ नहीं",
+    "पर्याप्त साक्ष्य नहीं",
+    "कोडबेस में नहीं",
+    "उपलब्ध नहीं है",
 ]
 
 
@@ -105,6 +125,20 @@ def build_qa_prompt(
 
     repo_banner = f"REPOSITORY CONTEXT: {repo_name}\n" if repo_name else ""
 
+    from ..retrieval.multilingual import detect_language
+    lang = detect_language(question)
+    lang_directive = ""
+    if lang == "hindi":
+        lang_directive = (
+            "\n- LANGUAGE: The developer asked in Hindi. Answer in Hindi naturally, while strictly "
+            "preserving all code identifiers, filenames, paths, and citation formats in their exact original English format."
+        )
+    elif lang == "hinglish":
+        lang_directive = (
+            "\n- LANGUAGE: The developer asked in Hinglish. Answer in Hinglish naturally, while strictly "
+            "preserving all code identifiers, filenames, paths, and citation formats in their exact original English format."
+        )
+
     user_prompt = (
         f"{repo_banner}"
         f"{history_text}"
@@ -116,6 +150,7 @@ def build_qa_prompt(
         f"- Cite all references using [File: <path>, Lines: <start>-<end>].\n"
         f"- Separate inferences using [Inference].\n"
         f"- If the evidence is insufficient, explicitly state that the evidence does not contain the answer."
+        f"{lang_directive}"
     )
 
     return SYSTEM_PROMPT, user_prompt

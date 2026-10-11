@@ -14,6 +14,7 @@ from .storage import (
     IndexStorageManager,
     index_storage_manager,
 )
+from .pipeline import run_repository_indexing
 
 __all__ = [
     "BaseEmbeddingProvider",
@@ -28,4 +29,5 @@ __all__ = [
     "PersistentIndexStore",
     "IndexStorageManager",
     "index_storage_manager",
+    "run_repository_indexing",
 ]

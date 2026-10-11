@@ -7,8 +7,13 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..models.chat import ChatRequest, ChatResponse
+from ..models.chat import (
+    ChatRequest,
+    ChatResponse,
+    SuggestedQuestionsResponse,
+)
 from ..services.indexing.storage import PersistentIndexStore
+from ..services.llm.suggestions import SuggestionService
 from ..services.llm.client import (
     LLMAPIError,
     LLMConfigurationError,
@@ -23,12 +28,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Chat"])
 
-# Singleton / default QA service instance
-_default_qa_service = QAService()
-
-
 def get_qa_service() -> QAService:
-    return _default_qa_service
+    return QAService()
 
 
 @router.post(
@@ -113,3 +114,32 @@ async def ask_question(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while processing the question.",
         )
+
+
+@router.get(
+    "/api/chat/suggested-questions/{repo_id}",
+    response_model=SuggestedQuestionsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get repository-derived suggested questions based on indexed files and symbols",
+)
+async def get_suggested_questions(repo_id: str) -> SuggestedQuestionsResponse:
+    """
+    Derives suggested inquiries tailored directly to repository files, symbols, and entry points.
+    Fulfills Step 29: derived from verified indexed files, explicitly clarifying suggestions are exploratory.
+    """
+    repo_id_clean = repo_id.strip()
+    if not repo_id_clean:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Repository ID cannot be empty.",
+        )
+
+    store = PersistentIndexStore(repo_id_clean)
+    if not store.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repo_id_clean}' has not been indexed yet or index is missing.",
+        )
+
+    suggester = SuggestionService()
+    return suggester.generate_suggestions(repo_id_clean)

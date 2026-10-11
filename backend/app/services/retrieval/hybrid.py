@@ -292,6 +292,13 @@ class HybridRetrievalManager:
             )
 
         provider = embedding_provider or self.embedding_provider
+        if provider is None:
+            try:
+                provider = get_embedding_provider()
+            except Exception as e:
+                logger.debug(f"Default embedding provider unavailable: {e}")
+                provider = None
+
         retriever = HybridRetriever.from_store(store, embedding_provider=provider)
         self._retrievers[repo_id] = retriever
         return retriever

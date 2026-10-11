@@ -64,11 +64,15 @@ class QAService:
         # 2. Contextualize query for follow-up questions
         retrieval_query = self.conversation_manager.contextualize_query(question, bounded_history)
 
-        # 3. Retrieve evidence chunks
+        # 3. Multilingual query expansion for hybrid retrieval (Step 30)
+        from ..retrieval.multilingual import detect_language, expand_multilingual_query
+        search_query = expand_multilingual_query(retrieval_query)
+
+        # 4. Retrieve evidence chunks
         try:
             results = self.retrieval_manager.retrieve(
                 repo_id=repo_id,
-                query=retrieval_query,
+                query=search_query,
                 top_k=top_k,
             )
         except RepositoryNotIndexedError:
@@ -79,10 +83,18 @@ class QAService:
 
         retrieved_chunks = [r.chunk for r in results]
 
-        # 4. If no chunks retrieved, abstain immediately
+        # 5. If no chunks retrieved, abstain immediately in appropriate language
         if not retrieved_chunks:
+            lang = detect_language(question)
+            if lang == "hindi":
+                abstain_text = "दिए गए कोडबेस साक्ष्य में इस प्रश्न का उत्तर देने के लिए पर्याप्त जानकारी नहीं है।"
+            elif lang == "hinglish":
+                abstain_text = "Retrieved codebase evidence me is question ka answer dene ke liye paryapt information nahi hai."
+            else:
+                abstain_text = "The retrieved codebase evidence does not contain sufficient information to answer this question."
+
             return ChatResponse(
-                answer="The retrieved codebase evidence does not contain sufficient information to answer this question.",
+                answer=abstain_text,
                 citations=[],
                 abstained=True,
                 inference_detected=False,

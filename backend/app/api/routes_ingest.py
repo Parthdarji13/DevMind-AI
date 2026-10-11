@@ -3,7 +3,7 @@ Ingestion API routes for ZIP uploads and repository management.
 Ref: PRD Section 6 (FR-01, FR-08), Section 17.4; Step 9 of execution guide.
 """
 from pathlib import Path
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile, status
 from ..core.config import get_settings
 from ..models.repository import (
     IngestResponse,
@@ -34,6 +34,7 @@ from ..services.ingestion.git_cloner import (
 from ..services.ingestion.progress_tracker import ProgressTracker
 from ..services.filtering.scanner import scan_and_filter_repository
 from ..services.ingestion.repository_manager import repo_manager
+from ..services.indexing.pipeline import run_repository_indexing
 
 router = APIRouter(prefix="/api/ingest", tags=["Ingestion"])
 settings = get_settings()
@@ -45,7 +46,10 @@ settings = get_settings()
     status_code=status.HTTP_201_CREATED,
     summary="Upload and ingest a repository ZIP archive",
 )
-async def upload_zip_repository(file: UploadFile = File(...)):
+async def upload_zip_repository(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
     # 1. Filename validation
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(
@@ -169,9 +173,12 @@ async def upload_zip_repository(file: UploadFile = File(...)):
 
     repo_manager.update_status(
         repo_id=repo.repo_id,
-        status=RepositoryStatus.READY,
+        status=RepositoryStatus.PROCESSING,
         stats=stats,
     )
+
+    # Enqueue background indexing pipeline (Stages 3 -> 4 -> 5)
+    background_tasks.add_task(run_repository_indexing, repo.repo_id)
 
     return IngestResponse(
         repo_id=repo.repo_id,
@@ -179,7 +186,7 @@ async def upload_zip_repository(file: UploadFile = File(...)):
         source_type=SourceType.ZIP,
         repo_name=file.filename,
         stats=stats,
-        message="Repository uploaded, extracted, and filtered successfully.",
+        message="Repository uploaded, extracted, and queued for indexing.",
     )
 
 
@@ -189,7 +196,10 @@ async def upload_zip_repository(file: UploadFile = File(...)):
     status_code=status.HTTP_201_CREATED,
     summary="Ingest a public Git repository via URL",
 )
-async def ingest_git_repository(req: IngestGitRequest):
+async def ingest_git_repository(
+    req: IngestGitRequest,
+    background_tasks: BackgroundTasks,
+):
     # 1. Validate URL & SSRF
     try:
         validation = validate_git_url(req.url)
@@ -270,9 +280,12 @@ async def ingest_git_repository(req: IngestGitRequest):
 
     repo_manager.update_status(
         repo_id=repo.repo_id,
-        status=RepositoryStatus.READY,
+        status=RepositoryStatus.PROCESSING,
         stats=stats,
     )
+
+    # Enqueue background indexing pipeline (Stages 3 -> 4 -> 5)
+    background_tasks.add_task(run_repository_indexing, repo.repo_id)
 
     return IngestResponse(
         repo_id=repo.repo_id,
@@ -280,8 +293,26 @@ async def ingest_git_repository(req: IngestGitRequest):
         source_type=SourceType.GIT,
         repo_name=validation.repo_name,
         stats=stats,
-        message="Public Git repository cloned, filtered, and ingested successfully.",
+        message="Public Git repository cloned, filtered, and queued for indexing.",
     )
+
+
+@router.post(
+    "/index/{repo_id}",
+    summary="Trigger or retry background indexing for an ingested repository",
+)
+def trigger_repository_indexing(
+    repo_id: str,
+    background_tasks: BackgroundTasks,
+):
+    repo = repo_manager.get_repository(repo_id)
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repo_id}' not found.",
+        )
+    background_tasks.add_task(run_repository_indexing, repo_id)
+    return {"status": "indexing_started", "repo_id": repo_id}
 
 
 @router.get(

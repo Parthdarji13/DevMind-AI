@@ -8,17 +8,32 @@ import os
 
 try:
     from dotenv import load_dotenv
-    # Load .env from root workspace or backend folder if present
-    _root_env = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-    _backend_env = Path(__file__).resolve().parent.parent.parent / ".env"
-    if _root_env.exists():
-        load_dotenv(_root_env)
-    elif _backend_env.exists():
-        load_dotenv(_backend_env)
-    else:
-        load_dotenv()
 except ImportError:
-    pass
+    load_dotenv = None
+
+
+def reload_env() -> None:
+    """Reloads environment variables from root and backend .env files dynamically."""
+    if not load_dotenv:
+        return
+    try:
+        core_dir = Path(__file__).resolve().parent
+        root_env = (core_dir / ".." / ".." / ".." / ".env").resolve()
+        backend_env = (core_dir / ".." / ".." / ".env").resolve()
+
+        if root_env.exists():
+            load_dotenv(root_env, override=True)
+        if backend_env.exists():
+            if not os.getenv("GEMINI_API_KEY"):
+                load_dotenv(backend_env, override=True)
+            else:
+                load_dotenv(backend_env, override=False)
+    except Exception:
+        pass
+
+
+# Initial load
+reload_env()
 
 from .limits import IngestionLimits, DEFAULT_LIMITS
 
@@ -53,7 +68,8 @@ class Settings:
 
     # LLM Settings
     llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "google_genai").lower())
-    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "gemini-2.0-flash"))
+    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "gemini-flash-latest"))
+    llm_timeout_seconds: float = field(default_factory=lambda: float(os.getenv("LLM_TIMEOUT_SECONDS", "60.0")))
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
@@ -66,7 +82,7 @@ class Settings:
         """Validates that credentials exist for active LLM provider, or returns informative error."""
         if self.llm_provider == "mock":
             return True, "Mock provider active (offline mode)"
-        if self.llm_provider == "google_genai":
+        if self.llm_provider in ("google_genai", "google", "gemini"):
             if not self.gemini_api_key or self.gemini_api_key.startswith("your_"):
                 return False, "GEMINI_API_KEY is not configured or contains placeholder value."
             return True, "Google GenAI configured"
@@ -88,4 +104,5 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    reload_env()
     return Settings()
