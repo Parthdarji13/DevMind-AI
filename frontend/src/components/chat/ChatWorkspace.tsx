@@ -58,7 +58,6 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   // Fetch repository-derived suggested questions (Step 29)
   useEffect(() => {
     let mounted = true;
-    setIsSuggestionsLoading(true);
     getSuggestedQuestions(repo.repo_id)
       .then((res) => {
         if (mounted && res.suggestions && res.suggestions.length > 0) {
@@ -142,13 +141,6 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
     setDrawerInitialIndex(initialIndex ?? null);
     setIsDrawerOpen(true);
   };
-
-  const sampleQuestions = [
-    "Explain the main architecture and entry point of this application.",
-    "Which files handle incoming API requests or routing?",
-    "Where is configuration and database connection setup?",
-    "Are there any authentication or security guards implemented?",
-  ];
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col lg:flex-row items-start gap-6 py-4">

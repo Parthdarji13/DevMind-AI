@@ -2,7 +2,6 @@
 
 import React from "react";
 import {
-  FolderGit2,
   FileCode2,
   CheckCircle2,
   Layers,

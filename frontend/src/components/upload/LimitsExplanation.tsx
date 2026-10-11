@@ -82,6 +82,15 @@ export const LimitsExplanation: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Explicit Privacy & External LLM Disclosure (Step 34 requirement) */}
+      <div className="mt-4 p-3.5 rounded-xl border border-emerald-200/90 bg-emerald-50/50 text-[#1C2024] flex items-start gap-3">
+        <ShieldCheck className="w-4 h-4 text-[#0B6E5F] flex-shrink-0 mt-0.5" />
+        <div className="text-xs leading-relaxed text-[#4A5568]">
+          <strong className="text-[#1C2024] font-semibold">Privacy & External LLM Disclosure:</strong>{" "}
+          Repository code is indexed locally and never executed. When asking questions, only the top retrieved code snippets are transmitted to your configured external LLM provider to synthesize grounded answers with line citations. Secret files (<code className="font-mono text-[11px] bg-white px-1 py-0.5 rounded border border-[#E5E2DB]">.env</code>, keys, certificates) are permanently excluded from indexing.
+        </div>
+      </div>
     </div>
   );
 };

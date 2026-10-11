@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Terminal, Shield, Sparkles, Wifi, WifiOff } from "lucide-react";
+import { Terminal, WifiOff } from "lucide-react";
 import { checkBackendHealth } from "@/lib/api";
 import { BackendHealth } from "@/lib/types";
 

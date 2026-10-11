@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { ArrowUp, Loader2, Sparkles } from "lucide-react";
+import { ArrowUp, Loader2 } from "lucide-react";
 
 interface ChatInputProps {
   onSendMessage: (question: string) => void;

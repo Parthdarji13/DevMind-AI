@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Copy, Check, FileCode2, Terminal, AlertCircle } from "lucide-react";
+import { Copy, Check, FileCode2, AlertCircle } from "lucide-react";
 import { Citation } from "@/lib/types";
 
 interface SourceCardProps {

@@ -6,8 +6,6 @@ import {
   X,
   Copy,
   Check,
-  ChevronDown,
-  ChevronUp,
   Search,
 } from "lucide-react";
 import { Citation } from "@/lib/types";
@@ -94,6 +92,7 @@ export const EvidenceDrawer: React.FC<EvidenceDrawerProps> = ({
               onClick={onClose}
               className="p-1.5 rounded-lg text-[#636A74] hover:text-[#1C2024] hover:bg-[#EAE8E2] transition-colors cursor-pointer"
               title="Close drawer"
+              aria-label="Close evidence drawer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -118,7 +117,7 @@ export const EvidenceDrawer: React.FC<EvidenceDrawerProps> = ({
 
         {/* Scrollable Cards Container */}
         <div className="p-5 overflow-y-auto space-y-4 flex-1">
-          {filteredCitations.map((citation, idx) => {
+          {filteredCitations.map((citation) => {
             const actualIndex = citations.indexOf(citation) + 1;
             const isHighlighted = activeCitationIndex === actualIndex;
 

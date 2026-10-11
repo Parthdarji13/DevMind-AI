@@ -19,6 +19,8 @@ from app.services.ingestion.zip_validator import (
     MalformedZipError,
     ZipSlipError,
     ZipOversizedError,
+    ZipSymlinkError,
+    ZipBombError,
 )
 
 
@@ -118,3 +120,71 @@ def test_oversized_archive_rejected():
     large_zip_bytes = b"0" * (2 * 1024 * 1024)
     with pytest.raises(ZipOversizedError):
         validate_zip_archive(large_zip_bytes, limits=limits)
+
+
+def test_zip_slip_windows_drive_letter_rejected():
+    # Attempting directory traversal via drive letter (e.g., C:evil.txt or D:\evil.txt)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("C:evil.txt", b"malicious windows drive traversal")
+    zip_bytes = buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        extract_dir = Path(tmpdir) / "sandbox"
+        with pytest.raises(ZipSlipError):
+            safe_extract_zip(zip_bytes, extract_dir)
+
+
+def test_zip_symlink_rejected():
+    # Attempting symlink entry in archive
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        info = zipfile.ZipInfo("symlink_entry")
+        info.create_system = 3  # Unix
+        info.external_attr = 0o120777 << 16  # S_IFLNK
+        zf.writestr(info, "/etc/passwd")
+    zip_bytes = buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        extract_dir = Path(tmpdir) / "sandbox"
+        with pytest.raises(ZipSymlinkError):
+            safe_extract_zip(zip_bytes, extract_dir)
+
+
+def test_zip_slip_nested_traversal_rejected():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("sub/deep/../../../evil.txt", b"nested traversal")
+    zip_bytes = buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        extract_dir = Path(tmpdir) / "sandbox"
+        with pytest.raises(ZipSlipError):
+            safe_extract_zip(zip_bytes, extract_dir)
+
+
+def test_zip_slip_windows_backslash_rejected():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("..\\windows_traversal.txt", b"backslash traversal")
+    zip_bytes = buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        extract_dir = Path(tmpdir) / "sandbox"
+        with pytest.raises(ZipSlipError):
+            safe_extract_zip(zip_bytes, extract_dir)
+
+
+def test_empty_zip_archive_valid():
+    # Empty zip with 0 entries should extract gracefully with 0 files
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        pass
+    zip_bytes = buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        extract_dir = Path(tmpdir) / "sandbox"
+        res, files = safe_extract_zip(zip_bytes, extract_dir)
+        assert res.is_valid is True
+        assert res.regular_files_count == 0
+        assert len(files) == 0

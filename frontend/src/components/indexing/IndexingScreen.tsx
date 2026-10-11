@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   ArrowRight,
   RotateCcw,
@@ -31,7 +31,7 @@ export const IndexingScreen: React.FC<IndexingScreenProps> = ({
   const [isRetrying, setIsRetrying] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchProgress = async () => {
+  const fetchProgress = useCallback(async () => {
     try {
       const data = await getIngestionProgress(repo.repo_id);
       setProgress(data);
@@ -46,7 +46,7 @@ export const IndexingScreen: React.FC<IndexingScreenProps> = ({
       setError(msg);
       return null;
     }
-  };
+  }, [repo.repo_id]);
 
   useEffect(() => {
     let mounted = true;
@@ -71,7 +71,7 @@ export const IndexingScreen: React.FC<IndexingScreenProps> = ({
         clearTimeout(pollingRef.current);
       }
     };
-  }, [repo.repo_id]);
+  }, [fetchProgress]);
 
   const handleRetry = async () => {
     setIsRetrying(true);

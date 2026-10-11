@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { GitBranch, Globe, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Globe, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { importGitRepository, ApiError } from "@/lib/api";
 import { IngestResponse } from "@/lib/types";
 

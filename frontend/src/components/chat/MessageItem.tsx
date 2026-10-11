@@ -9,7 +9,6 @@ import {
   HelpCircle,
   ChevronDown,
   ChevronUp,
-  Layers,
 } from "lucide-react";
 import { Citation } from "@/lib/types";
 import { SafeMarkdown } from "./SafeMarkdown";
