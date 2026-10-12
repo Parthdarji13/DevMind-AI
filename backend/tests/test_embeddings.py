@@ -19,6 +19,7 @@ from app.services.indexing.embeddings import (
     LocalSemanticEmbeddingProvider,
     LocalHashEmbeddingProvider,
     SentenceTransformerEmbeddingProvider,
+    FastEmbedEmbeddingProvider,
     MockEmbeddingProvider,
     GeminiEmbeddingProvider,
     OpenAIEmbeddingProvider,
@@ -94,7 +95,10 @@ def test_missing_credentials_fails_explicitly():
 
 def test_factory_creation():
     local_p = get_embedding_provider("local")
-    assert isinstance(local_p, (LocalSemanticEmbeddingProvider, SentenceTransformerEmbeddingProvider))
+    assert isinstance(local_p, (LocalSemanticEmbeddingProvider, SentenceTransformerEmbeddingProvider, FastEmbedEmbeddingProvider))
+
+    fast_p = get_embedding_provider("fastembed")
+    assert isinstance(fast_p, FastEmbedEmbeddingProvider)
 
     local_hash_p = get_embedding_provider("local_hash")
     assert isinstance(local_hash_p, LocalHashEmbeddingProvider)

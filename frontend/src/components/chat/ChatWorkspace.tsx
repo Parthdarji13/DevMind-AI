@@ -6,6 +6,11 @@ import {
   Sparkles,
   Trash2,
   AlertCircle,
+  GitMerge,
+  FileText,
+  Network,
+  GraduationCap,
+  Download,
 } from "lucide-react";
 import { IngestResponse, IngestionProgress, Citation, ChatMessage, SuggestedQuestion } from "@/lib/types";
 import { askChatQuestionStream, getIngestionProgress, getSuggestedQuestions, ApiError } from "@/lib/api";
@@ -14,6 +19,10 @@ import { MessageItem, ChatMessageDisplay } from "./MessageItem";
 import { ChatInput } from "./ChatInput";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import { SuggestedQuestions } from "./SuggestedQuestions";
+import { FlowTraceModal } from "./FlowTraceModal";
+import { OnboardingDocModal } from "./OnboardingDocModal";
+import { ArchitectureMapModal } from "./ArchitectureMapModal";
+import { LearningQuizModal } from "./LearningQuizModal";
 
 interface ChatWorkspaceProps {
   repo: IngestResponse;
@@ -34,6 +43,12 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   const [drawerCitations, setDrawerCitations] = useState<Citation[]>([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerInitialIndex, setDrawerInitialIndex] = useState<number | null>(null);
+
+  // Advanced Feature Modals
+  const [isFlowTraceOpen, setIsFlowTraceOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [isArchMapOpen, setIsArchMapOpen] = useState(false);
+  const [isQuizOpen, setIsQuizOpen] = useState(false);
 
   // Suggested inquiries state (Step 29)
   const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
@@ -184,6 +199,48 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
     setError(null);
   };
 
+  // Feature 10: Chat Export to Markdown
+  const handleExportChat = () => {
+    if (messages.length === 0) return;
+
+    let md = `# DevMind AI — Conversation Transcript\n\n`;
+    md += `- **Repository**: \`${repo.repo_name}\` (\`${repo.repo_id}\`)\n`;
+    md += `- **Exported At**: ${new Date().toLocaleString()}\n`;
+    md += `- **Total Messages**: ${messages.length}\n\n`;
+    md += `---\n\n`;
+
+    messages.forEach((m) => {
+      const speaker = m.role === "user" ? "👤 User" : "🤖 DevMind AI";
+      md += `### ${speaker} (${m.timestamp || "N/A"})\n\n`;
+      md += `${m.content}\n\n`;
+
+      if (m.citations && m.citations.length > 0) {
+        md += `**Verified Citations:**\n`;
+        m.citations.forEach((c) => {
+          md += `- \`${c.file_path}:${c.start_line}-${c.end_line}\``;
+          if (c.snippet) {
+            md += ` — *${c.snippet.slice(0, 80).replace(/\n/g, " ")}*`;
+          }
+          md += `\n`;
+        });
+        md += `\n`;
+      }
+
+      md += `---\n\n`;
+    });
+
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeRepo = repo.repo_id.replace(/[^a-zA-Z0-9_-]/g, "_");
+    link.href = url;
+    link.download = `devmind_chat_${safeRepo}_${Date.now()}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleOpenDrawer = (citations: Citation[], initialIndex?: number) => {
     setDrawerCitations(citations);
     setDrawerInitialIndex(initialIndex ?? null);
@@ -198,7 +255,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
       {/* Main Chat Panel */}
       <section className="flex-1 w-full bg-white border border-[#E5E2DB] rounded-2xl shadow-sm flex flex-col h-[760px] overflow-hidden">
         {/* Chat Thread Header */}
-        <div className="px-5 py-3.5 border-b border-[#EAE8E2] bg-[#FAF9F6] flex items-center justify-between">
+        <div className="px-5 py-3 border-b border-[#EAE8E2] bg-[#FAF9F6] flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-[#E6F4F1] text-[#0B6E5F] flex items-center justify-center">
               <MessageSquare className="w-4 h-4" />
@@ -213,17 +270,71 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
             </div>
           </div>
 
-          {messages.length > 0 && (
+          {/* Action Bar: Flow Trace, Onboarding, Architecture Map, Quiz, Export */}
+          <div className="flex items-center flex-wrap gap-1.5">
             <button
               type="button"
-              onClick={handleClearChat}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg text-[#636A74] hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
-              title="Clear conversation history"
+              onClick={() => setIsFlowTraceOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg text-[#1C2024] bg-white border border-[#E5E2DB] hover:bg-[#F2EFE9] transition-colors cursor-pointer shadow-xs"
+              title="Trace multi-step code execution path"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear</span>
+              <GitMerge className="w-3.5 h-3.5 text-[#0B6E5F]" />
+              <span className="hidden sm:inline">Trace Flow</span>
             </button>
-          )}
+
+            <button
+              type="button"
+              onClick={() => setIsOnboardingOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg text-[#1C2024] bg-white border border-[#E5E2DB] hover:bg-[#F2EFE9] transition-colors cursor-pointer shadow-xs"
+              title="Generate comprehensive onboarding and architecture guide"
+            >
+              <FileText className="w-3.5 h-3.5 text-[#0B6E5F]" />
+              <span className="hidden sm:inline">Onboarding Doc</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsArchMapOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg text-[#1C2024] bg-white border border-[#E5E2DB] hover:bg-[#F2EFE9] transition-colors cursor-pointer shadow-xs"
+              title="Inspect architectural module dependency map"
+            >
+              <Network className="w-3.5 h-3.5 text-[#0B6E5F]" />
+              <span className="hidden sm:inline">Arch Map</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsQuizOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg text-[#1C2024] bg-white border border-[#E5E2DB] hover:bg-[#F2EFE9] transition-colors cursor-pointer shadow-xs"
+              title="Take interactive codebase quiz"
+            >
+              <GraduationCap className="w-3.5 h-3.5 text-[#0B6E5F]" />
+              <span className="hidden sm:inline">Quiz</span>
+            </button>
+
+            {messages.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportChat}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-[#0B6E5F] bg-[#E6F4F1] hover:bg-[#D2EDE7] border border-[#BDE3DC] transition-colors cursor-pointer shadow-xs"
+                  title="Export conversation thread to Markdown file"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleClearChat}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-lg text-[#636A74] hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer ml-1"
+                  title="Clear conversation history"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Messages Scroll Area */}
@@ -289,6 +400,40 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         activeCitationIndex={drawerInitialIndex}
+      />
+
+      {/* Feature 8: Execution Flow Trace Modal */}
+      <FlowTraceModal
+        repoId={repo.repo_id}
+        isOpen={isFlowTraceOpen}
+        onClose={() => setIsFlowTraceOpen(false)}
+        onSelectQuery={(q) => handleSendMessage(q)}
+      />
+
+      {/* Feature 9: Onboarding Doc Modal */}
+      <OnboardingDocModal
+        repoId={repo.repo_id}
+        repoName={repo.repo_name}
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+      />
+
+      {/* Feature 11: Architecture Dependency Map Modal */}
+      <ArchitectureMapModal
+        repoId={repo.repo_id}
+        repoName={repo.repo_name}
+        isOpen={isArchMapOpen}
+        onClose={() => setIsArchMapOpen(false)}
+        onSelectQuestion={(q) => handleSendMessage(q)}
+      />
+
+      {/* Feature 12: Learning Quiz Modal */}
+      <LearningQuizModal
+        repoId={repo.repo_id}
+        repoName={repo.repo_name}
+        isOpen={isQuizOpen}
+        onClose={() => setIsQuizOpen(false)}
+        onSelectQuestion={(q) => handleSendMessage(q)}
       />
     </div>
   );

@@ -128,16 +128,17 @@ class LocalSemanticEmbeddingProvider(BaseEmbeddingProvider):
 
 
 class GeminiEmbeddingProvider(BaseEmbeddingProvider):
-    """Google Gemini text-embedding-004 provider with batching and error handling."""
+    """Google Gemini embedding provider with batching and error handling."""
 
-    def __init__(self, api_key: str, model_name: str = "text-embedding-004"):
+    def __init__(self, api_key: str, model_name: str = "gemini-embedding-001"):
         if not api_key or api_key.startswith("your_"):
             raise EmbeddingConfigurationError(
                 "GEMINI_API_KEY is not configured or contains placeholder value."
             )
         self._api_key = api_key
-        self._model_name = model_name
-        self._dimension = 768
+        clean_name = model_name.replace("models/", "")
+        self._model_name = clean_name
+        self._dimension = 768 if "004" in clean_name else 3072
 
     @property
     def dimension(self) -> int:
@@ -320,6 +321,41 @@ class SentenceTransformerEmbeddingProvider(BaseEmbeddingProvider):
         return embeddings.tolist()
 
 
+class FastEmbedEmbeddingProvider(BaseEmbeddingProvider):
+    """
+    True local dense semantic neural embedding provider powered by FastEmbed (ONNX).
+    Default model is 'sentence-transformers/all-MiniLM-L6-v2' (384 dimensions).
+    Runs offline on CPU with high inference speed, low memory footprint, and zero external network calls.
+    """
+
+    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+        try:
+            from fastembed import TextEmbedding  # type: ignore
+        except ImportError as e:
+            raise EmbeddingConfigurationError(
+                "The 'fastembed' package is required for local dense neural embeddings. "
+                "Install it via 'pip install fastembed' or use EMBEDDING_PROVIDER=local_hash."
+            ) from e
+
+        self._model_name = model_name
+        self._model = TextEmbedding(model_name=model_name)
+        self._dimension = 384
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    def embed_texts(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
+        if not texts:
+            return []
+        embeddings = list(self._model.embed(texts, batch_size=batch_size))
+        return [self.normalize_vector(vec.tolist() if hasattr(vec, "tolist") else list(vec)) for vec in embeddings]
+
+
 # Alias for explicit zero-dependency hash projection
 LocalHashEmbeddingProvider = LocalSemanticEmbeddingProvider
 
@@ -328,28 +364,45 @@ def get_embedding_provider(provider_name: Optional[str] = None) -> BaseEmbedding
     """
     Factory creating configured embedding provider.
     Enforces that semantic search fails with clear error if credentials missing.
+    Prioritizes real neural semantic models (FastEmbed / SentenceTransformers) for local search.
     """
     settings = get_settings()
     choice = (provider_name or settings.embedding_provider).lower()
 
-    if choice in ("sentence-transformers", "sentence_transformers"):
-        return SentenceTransformerEmbeddingProvider()
-    elif choice in ("local", "local_semantic"):
+    if choice in ("fastembed", "local", "local_semantic", "sentence-transformers", "sentence_transformers"):
+        # 1. Prefer FastEmbed (fast ONNX neural transformer embeddings)
+        try:
+            import fastembed  # noqa: F401
+            return FastEmbedEmbeddingProvider()
+        except Exception:
+            pass
+
+        # 2. Try SentenceTransformers if available
         try:
             import sentence_transformers  # noqa: F401
             return SentenceTransformerEmbeddingProvider()
-        except ImportError:
-            return LocalSemanticEmbeddingProvider()
+        except Exception:
+            pass
+
+        # 3. Fallback to LocalSemantic deterministic hash projection
+        return LocalSemanticEmbeddingProvider()
+
     elif choice in ("local_hash", "hash"):
         return LocalSemanticEmbeddingProvider()
+
     elif choice in ("google", "google_genai", "gemini"):
-        return GeminiEmbeddingProvider(api_key=settings.gemini_api_key)
+        model = settings.embedding_model if "embedding" in settings.embedding_model else "gemini-embedding-001"
+        return GeminiEmbeddingProvider(api_key=settings.gemini_api_key, model_name=model)
+
     elif choice == "openai":
         return OpenAIEmbeddingProvider(api_key=settings.openai_api_key)
+
     elif choice == "mock":
         return MockEmbeddingProvider()
+
     else:
         raise EmbeddingConfigurationError(
-            f"Unsupported embedding provider: '{choice}'. Supported: 'sentence-transformers', 'local', 'local_hash', 'google_genai', 'openai', 'mock'."
+            f"Unsupported embedding provider: '{choice}'. Supported: 'local', 'fastembed', 'sentence-transformers', 'local_hash', 'google_genai', 'openai', 'mock'."
         )
+
 

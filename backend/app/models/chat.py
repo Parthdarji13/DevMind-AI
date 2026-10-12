@@ -69,3 +69,107 @@ class ChatFeedbackRequest(BaseModel):
         None, description="Classification of the feedback issue"
     )
     comment: Optional[str] = Field(None, max_length=1000, description="Optional developer comments")
+
+
+# ==============================================================================
+# Feature 8: Flow Trace Models
+# ==============================================================================
+
+class FlowTraceStep(BaseModel):
+    """Single step in a traced execution path."""
+    step_number: int = Field(..., description="Step sequence index (1-based)")
+    title: str = Field(..., description="Action title of this step")
+    file_path: str = Field(..., description="Relative file path where logic executes")
+    start_line: int = Field(..., description="Starting line number")
+    end_line: int = Field(..., description="Ending line number")
+    function_or_symbol: Optional[str] = Field(None, description="Function, class, or symbol name")
+    description: str = Field(..., description="Detailed explanation of execution at this step")
+
+
+class FlowTraceRequest(BaseModel):
+    """Payload to trace a multi-step execution flow."""
+    repo_id: str = Field(..., description="Repository identifier")
+    flow_query: str = Field(..., min_length=2, max_length=500, description="Flow to trace (e.g. 'user login', 'zip ingestion')")
+
+
+class FlowTraceResponse(BaseModel):
+    """Structured step-by-step trace of a code flow with Mermaid sequence diagram."""
+    flow_title: str = Field(..., description="Title of the traced flow")
+    summary: str = Field(..., description="High-level architectural overview of the flow")
+    steps: list[FlowTraceStep] = Field(default_factory=list, description="Ordered execution steps")
+    mermaid_diagram: str = Field(..., description="Mermaid sequenceDiagram representation of the flow")
+    citations: list[Citation] = Field(default_factory=list, description="Evidence citations for the flow")
+
+
+# ==============================================================================
+# Feature 9: Onboarding Architecture Doc Models
+# ==============================================================================
+
+class OnboardingDocRequest(BaseModel):
+    """Payload to generate a comprehensive onboarding architecture document."""
+    repo_id: str = Field(..., description="Repository identifier")
+
+
+class OnboardingDocResponse(BaseModel):
+    """Generated onboarding architecture document with module breakdown and verified citations."""
+    repo_id: str = Field(..., description="Repository identifier")
+    title: str = Field(..., description="Document title")
+    content: str = Field(..., description="Full Markdown content of onboarding guide")
+    summary: str = Field(..., description="2-3 sentence executive summary")
+    file_count: int = Field(default=0, description="Indexed files analyzed")
+    languages: list[str] = Field(default_factory=list, description="Primary languages detected")
+
+
+# ==============================================================================
+# Feature 11: Architecture Dependency Map Models
+# ==============================================================================
+
+class ArchitectureMapNode(BaseModel):
+    """Module or layer node in the architectural graph."""
+    id: str = Field(..., description="Unique module or directory identifier")
+    label: str = Field(..., description="Human-readable module name")
+    module_type: str = Field(..., description="Layer category: api, services, models, db, core, utils, other")
+    file_count: int = Field(default=1, description="Number of files inside module")
+    line_count: int = Field(default=0, description="Total LOC in module")
+    description: Optional[str] = Field(None, description="Inferred role of this module")
+
+
+class ArchitectureMapEdge(BaseModel):
+    """Directed dependency or import edge between modules."""
+    source: str = Field(..., description="Source module ID")
+    target: str = Field(..., description="Target module ID (imported)")
+    relationship: str = Field(default="imports", description="Dependency type: imports, calls, depends_on")
+    import_count: int = Field(default=1, description="Number of detected cross-module imports")
+
+
+class ArchitectureMapResponse(BaseModel):
+    """Interactive architectural dependency graph of the codebase."""
+    repo_id: str = Field(..., description="Repository identifier")
+    nodes: list[ArchitectureMapNode] = Field(default_factory=list, description="Architectural nodes")
+    edges: list[ArchitectureMapEdge] = Field(default_factory=list, description="Inter-module dependency edges")
+    total_modules: int = Field(default=0, description="Total identified modules")
+
+
+# ==============================================================================
+# Feature 12: Learning Mode & Quiz Models
+# ==============================================================================
+
+class QuizQuestion(BaseModel):
+    """Codebase understanding quiz question."""
+    id: str = Field(..., description="Unique question identifier")
+    question: str = Field(..., description="The quiz question text")
+    options: list[str] = Field(..., min_length=4, max_length=4, description="4 multiple-choice options")
+    correct_index: int = Field(..., ge=0, le=3, description="Index of the correct answer (0-3)")
+    hint: str = Field(..., description="Helpful clue for learners")
+    explanation: str = Field(..., description="Detailed explanation of the correct answer citing code")
+    file_path: str = Field(..., description="Source file tested")
+    start_line: int = Field(..., description="Source line start")
+    end_line: int = Field(..., description="Source line end")
+
+
+class QuizResponse(BaseModel):
+    """Collection of quiz questions for learning mode."""
+    repo_id: str = Field(..., description="Repository identifier")
+    questions: list[QuizQuestion] = Field(default_factory=list, description="Questions generated for this repo")
+    total_questions: int = Field(default=0, description="Count of questions")
+

@@ -10,6 +10,10 @@ import {
   ChatResponse,
   SuggestedQuestionsResponse,
   RepositorySummary,
+  FlowTraceResponse,
+  OnboardingDocResponse,
+  ArchitectureMapResponse,
+  QuizResponse,
 } from "./types";
 import { getStoredToken } from "./auth";
 
@@ -481,4 +485,125 @@ export async function reindexRepository(repoId: string): Promise<{ status: strin
     throw new ApiError(0, msg);
   }
 }
+
+/**
+ * Traces execution path with steps and Mermaid sequence diagram (Feature 8).
+ */
+export async function getFlowTrace(repoId: string, flowQuery: string): Promise<FlowTraceResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/flow-trace`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ repo_id: repoId, flow_query: flowQuery }),
+    });
+
+    if (!res.ok) {
+      let errDetail = "Failed to trace execution flow.";
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errDetail;
+      } catch {}
+      throw new ApiError(res.status, errDetail);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
+/**
+ * Generates comprehensive Onboarding Architecture Guide (Feature 9).
+ */
+export async function getOnboardingDoc(repoId: string): Promise<OnboardingDocResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/onboarding-doc`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ repo_id: repoId }),
+    });
+
+    if (!res.ok) {
+      let errDetail = "Failed to generate onboarding document.";
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errDetail;
+      } catch {}
+      throw new ApiError(res.status, errDetail);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
+/**
+ * Retrieves interactive architectural dependency graph (Feature 11).
+ */
+export async function getArchitectureMap(repoId: string): Promise<ArchitectureMapResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/architecture-map/${encodeURIComponent(repoId)}`, {
+      method: "GET",
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
+
+    if (!res.ok) {
+      let errDetail = "Failed to fetch architecture map.";
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errDetail;
+      } catch {}
+      throw new ApiError(res.status, errDetail);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
+/**
+ * Generates codebase understanding quiz questions (Feature 12).
+ */
+export async function getLearningQuiz(repoId: string): Promise<QuizResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/quiz/${encodeURIComponent(repoId)}`, {
+      method: "GET",
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
+
+    if (!res.ok) {
+      let errDetail = "Failed to fetch codebase quiz.";
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errDetail;
+      } catch {}
+      throw new ApiError(res.status, errDetail);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
 

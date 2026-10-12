@@ -13,8 +13,15 @@ from ..models.chat import (
     ChatResponse,
     ChatFeedbackRequest,
     SuggestedQuestionsResponse,
+    FlowTraceRequest,
+    FlowTraceResponse,
+    OnboardingDocRequest,
+    OnboardingDocResponse,
+    ArchitectureMapResponse,
+    QuizResponse,
 )
 from ..services.indexing.storage import PersistentIndexStore
+from ..services.llm.advanced_features import AdvancedFeaturesService
 from ..services.llm.suggestions import SuggestionService
 from ..services.llm.client import (
     LLMAPIError,
@@ -35,6 +42,9 @@ router = APIRouter(tags=["Chat"])
 
 def get_qa_service() -> QAService:
     return QAService()
+
+def get_advanced_features_service() -> AdvancedFeaturesService:
+    return AdvancedFeaturesService()
 
 
 @router.post(
@@ -269,5 +279,62 @@ def submit_chat_feedback(
         "saved_to_mongo": saved,
         "message": "Feedback submitted successfully. Thank you!",
     }
+
+
+@router.post(
+    "/api/chat/flow-trace",
+    response_model=FlowTraceResponse,
+    summary="Trace a step-by-step execution path through codebase with Mermaid sequence diagram (Feature 8)",
+)
+def get_flow_trace(
+    request: FlowTraceRequest,
+    user: UserContext = Depends(get_current_user),
+    service: AdvancedFeaturesService = Depends(get_advanced_features_service),
+) -> FlowTraceResponse:
+    require_repo_access(request.repo_id, user)
+    return service.trace_flow(request.repo_id, request.flow_query)
+
+
+@router.post(
+    "/api/chat/onboarding-doc",
+    response_model=OnboardingDocResponse,
+    summary="Generate an onboarding architecture document with verified citations (Feature 9)",
+)
+def get_onboarding_doc(
+    request: OnboardingDocRequest,
+    user: UserContext = Depends(get_current_user),
+    service: AdvancedFeaturesService = Depends(get_advanced_features_service),
+) -> OnboardingDocResponse:
+    require_repo_access(request.repo_id, user)
+    return service.generate_onboarding_doc(request.repo_id)
+
+
+@router.get(
+    "/api/chat/architecture-map/{repo_id}",
+    response_model=ArchitectureMapResponse,
+    summary="Get architectural dependency graph and module breakdown (Feature 11)",
+)
+def get_architecture_map(
+    repo_id: str,
+    user: UserContext = Depends(get_current_user),
+    service: AdvancedFeaturesService = Depends(get_advanced_features_service),
+) -> ArchitectureMapResponse:
+    require_repo_access(repo_id, user)
+    return service.build_architecture_map(repo_id)
+
+
+@router.get(
+    "/api/chat/quiz/{repo_id}",
+    response_model=QuizResponse,
+    summary="Generate codebase understanding quiz for learning mode (Feature 12)",
+)
+def get_learning_quiz(
+    repo_id: str,
+    user: UserContext = Depends(get_current_user),
+    service: AdvancedFeaturesService = Depends(get_advanced_features_service),
+) -> QuizResponse:
+    require_repo_access(repo_id, user)
+    return service.generate_learning_quiz(repo_id)
+
 
 

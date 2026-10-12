@@ -142,3 +142,72 @@ export interface RepositorySummary {
   owner_id?: string | null;
 }
 
+export interface FlowTraceStep {
+  step_number: number;
+  title: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  function_or_symbol?: string | null;
+  description: string;
+}
+
+export interface FlowTraceResponse {
+  flow_title: string;
+  summary: string;
+  steps: FlowTraceStep[];
+  mermaid_diagram: string;
+  citations: Citation[];
+}
+
+export interface OnboardingDocResponse {
+  repo_id: string;
+  title: string;
+  content: string;
+  summary: string;
+  file_count: number;
+  languages: string[];
+}
+
+export interface ArchitectureMapNode {
+  id: string;
+  label: string;
+  module_type: "api" | "services" | "models" | "db" | "core" | "utils" | "other" | string;
+  file_count: number;
+  line_count: number;
+  description?: string | null;
+}
+
+export interface ArchitectureMapEdge {
+  source: string;
+  target: string;
+  relationship: string;
+  import_count: number;
+}
+
+export interface ArchitectureMapResponse {
+  repo_id: string;
+  nodes: ArchitectureMapNode[];
+  edges: ArchitectureMapEdge[];
+  total_modules: number;
+}
+
+export interface QuizQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correct_index: number;
+  hint: string;
+  explanation: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+}
+
+export interface QuizResponse {
+  repo_id: string;
+  questions: QuizQuestion[];
+  total_questions: number;
+}
+
+
