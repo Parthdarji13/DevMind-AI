@@ -63,7 +63,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
       .then((p) => {
         if (mounted) setProgress(p);
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       mounted = false;
     };
@@ -157,13 +157,13 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               prev.map((m) =>
                 m.id === assistantMsgId
                   ? {
-                      ...m,
-                      content: res.answer || m.content,
-                      citations: res.citations,
-                      abstained: res.abstained,
-                      inference_detected: res.inference_detected,
-                      isStreaming: false,
-                    }
+                    ...m,
+                    content: res.answer || m.content,
+                    citations: res.citations,
+                    abstained: res.abstained,
+                    inference_detected: res.inference_detected,
+                    isStreaming: false,
+                  }
                   : m
               )
             );
@@ -181,10 +181,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         prev.map((m) =>
           m.id === assistantMsgId
             ? {
-                ...m,
-                content: m.content || "Unable to complete response. Please retry.",
-                isStreaming: false,
-              }
+              ...m,
+              content: m.content || "Unable to complete response. Please retry.",
+              isStreaming: false,
+            }
             : m
         )
       );
