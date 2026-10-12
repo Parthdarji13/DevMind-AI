@@ -17,6 +17,8 @@ import {
   Flag,
   X,
   Send,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { Citation } from "@/lib/types";
 import { submitChatFeedback } from "@/lib/api";
@@ -60,6 +62,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackSuccess, setFeedbackSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   if (isUser) {
     return (
@@ -90,6 +93,44 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     } catch (err) {
       console.warn("Failed to copy message:", err);
     }
+  };
+
+  const handleSpeakToggle = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    // Clean markdown before speaking
+    const textToSpeak = message.content
+      .replace(/```[\s\S]*?```/g, "Code block omitted.")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/[*#_~]/g, "")
+      .trim();
+
+    if (!textToSpeak) return;
+
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const hiVoice = voices.find((v) => v.lang.includes("hi") || v.lang.includes("HI"));
+    if (hiVoice) {
+      utterance.voice = hiVoice;
+    }
+
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleUpvote = async () => {
@@ -331,6 +372,30 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     <>
                       <Copy className="w-3.5 h-3.5" />
                       <span>Copy</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Voice Read Aloud Button */}
+                <button
+                  type="button"
+                  onClick={handleSpeakToggle}
+                  title={isSpeaking ? "Stop reading aloud" : "Listen to answer (Read Aloud)"}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border cursor-pointer ${
+                    isSpeaking
+                      ? "bg-rose-50 text-rose-700 border-rose-300 font-semibold shadow-xs animate-pulse"
+                      : "bg-white text-[#636A74] border-[#E5E2DB] hover:bg-[#FAF9F6] hover:text-[#1C2024]"
+                  }`}
+                >
+                  {isSpeaking ? (
+                    <>
+                      <VolumeX className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Stop</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-3.5 h-3.5 text-[#0B6E5F]" />
+                      <span>Listen</span>
                     </>
                   )}
                 </button>
