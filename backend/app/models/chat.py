@@ -57,3 +57,15 @@ class SuggestedQuestionsResponse(BaseModel):
     suggestions: list[SuggestedQuestion] = Field(default_factory=list, description="List of repository-derived questions")
     total_chunks_analyzed: int = Field(default=0, description="Number of indexed code chunks inspected")
     languages_detected: list[str] = Field(default_factory=list, description="Detected programming languages")
+
+
+class ChatFeedbackRequest(BaseModel):
+    """Payload for submitting user thumbs-up/down feedback and citation quality reports."""
+    repo_id: str = Field(..., description="Repository identifier")
+    message_id: Optional[str] = Field(None, description="Message identifier")
+    session_id: Optional[str] = Field(None, description="Conversation session identifier")
+    rating: Literal["up", "down"] = Field(..., description="'up' for thumbs up, 'down' for thumbs down")
+    feedback_tag: Optional[Literal["correct", "wrong_source", "hallucination", "incomplete", "other"]] = Field(
+        None, description="Classification of the feedback issue"
+    )
+    comment: Optional[str] = Field(None, max_length=1000, description="Optional developer comments")

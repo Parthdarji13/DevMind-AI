@@ -4,12 +4,11 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   MessageSquare,
   Sparkles,
-  Loader2,
   Trash2,
   AlertCircle,
 } from "lucide-react";
 import { IngestResponse, IngestionProgress, Citation, ChatMessage, SuggestedQuestion } from "@/lib/types";
-import { askChatQuestion, getIngestionProgress, getSuggestedQuestions, ApiError } from "@/lib/api";
+import { askChatQuestionStream, getIngestionProgress, getSuggestedQuestions, ApiError } from "@/lib/api";
 import { ChatSidebar } from "./ChatSidebar";
 import { MessageItem, ChatMessageDisplay } from "./MessageItem";
 import { ChatInput } from "./ChatInput";
@@ -83,14 +82,27 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
 
   const handleSendMessage = async (question: string) => {
     setError(null);
+    const nowTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const userMsgId = `msg-${Date.now()}-user`;
+    const assistantMsgId = `msg-${Date.now()}-ast`;
+
     const userMsg: ChatMessageDisplay = {
-      id: `msg-${Date.now()}-user`,
+      id: userMsgId,
       role: "user",
       content: question,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      timestamp: nowTime,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const initialAssistantMsg: ChatMessageDisplay = {
+      id: assistantMsgId,
+      role: "assistant",
+      content: "",
+      isStreaming: true,
+      timestamp: nowTime,
+    };
+
+    // Add user message & streaming assistant placeholder
+    setMessages((prev) => [...prev, userMsg, initialAssistantMsg]);
     setIsLoading(true);
 
     try {
@@ -100,31 +112,67 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         content: m.content,
       }));
 
-      const res = await askChatQuestion({
-        repo_id: repo.repo_id,
-        question: question,
-        history: historyPayload,
-        session_id: sessionId,
-      });
-
-      if (res.session_id) {
-        setSessionId(res.session_id);
-      }
-
-      const assistantMsg: ChatMessageDisplay = {
-        id: `msg-${Date.now()}-ast`,
-        role: "assistant",
-        content: res.answer,
-        citations: res.citations,
-        abstained: res.abstained,
-        inference_detected: res.inference_detected,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
+      await askChatQuestionStream(
+        {
+          repo_id: repo.repo_id,
+          question: question,
+          history: historyPayload,
+          session_id: sessionId,
+        },
+        {
+          onChunk: (token: string) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, content: m.content + token, isStreaming: true }
+                  : m
+              )
+            );
+          },
+          onMetadata: (meta) => {
+            if (meta.session_id) {
+              setSessionId(meta.session_id);
+            }
+          },
+          onDone: (res) => {
+            if (res.session_id) {
+              setSessionId(res.session_id);
+            }
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      content: res.answer || m.content,
+                      citations: res.citations,
+                      abstained: res.abstained,
+                      inference_detected: res.inference_detected,
+                      isStreaming: false,
+                    }
+                  : m
+              )
+            );
+          },
+          onError: (err) => {
+            console.warn("Stream error encountered:", err);
+          },
+        }
+      );
     } catch (err: unknown) {
       const msg = err instanceof ApiError ? err.message : "Failed to generate answer.";
       setError(msg);
+      // Mark assistant message as finished if failed
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMsgId
+            ? {
+                ...m,
+                content: m.content || "Unable to complete response. Please retry.",
+                isStreaming: false,
+              }
+            : m
+        )
+      );
     } finally {
       setIsLoading(false);
     }
@@ -210,17 +258,11 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                 <MessageItem
                   key={msg.id}
                   message={msg}
+                  repoId={repo.repo_id}
+                  sessionId={sessionId}
                   onOpenDrawer={handleOpenDrawer}
                 />
               ))}
-
-              {/* Loading thinking state */}
-              {isLoading && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-[#FAF9F6] border border-[#EAE8E2] text-xs text-[#0B6E5F] max-w-md animate-pulse">
-                  <Loader2 className="w-4 h-4 animate-spin text-[#0B6E5F]" />
-                  <span>Retrieving codebase evidence & synthesizing cited response...</span>
-                </div>
-              )}
 
               {/* Error callout */}
               {error && (

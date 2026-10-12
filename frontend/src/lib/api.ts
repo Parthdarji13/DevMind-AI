@@ -254,6 +254,121 @@ export async function askChatQuestion(request: ChatRequest): Promise<ChatRespons
 }
 
 /**
+ * Streams real-time tokens using Server-Sent Events (SSE) for responsive typewriter answers.
+ */
+export async function askChatQuestionStream(
+  request: ChatRequest,
+  callbacks: {
+    onChunk: (token: string) => void;
+    onMetadata?: (meta: { session_id?: string; retrieved_chunks_count?: number }) => void;
+    onDone?: (response: ChatResponse) => void;
+    onError?: (err: Error) => void;
+  }
+): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!res.ok) {
+      let errorDetail = "Chat stream failed.";
+      try {
+        const errorJson = await res.json();
+        errorDetail = errorJson.detail || errorDetail;
+      } catch {
+        errorDetail = `Server returned status ${res.status}`;
+      }
+      throw new ApiError(res.status, errorDetail);
+    }
+
+    if (!res.body) {
+      throw new ApiError(0, "Readable stream not supported by browser.");
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() || "";
+
+      for (const block of blocks) {
+        const eventMatch = block.match(/^event:\s*([^\n\r]+)/m);
+        const dataPrefixIdx = block.indexOf("data:");
+        const rawData = dataPrefixIdx !== -1 ? block.slice(dataPrefixIdx + 5).trim() : "";
+        const event = eventMatch ? eventMatch[1].trim() : "message";
+
+        if (event === "token") {
+          try {
+            const parsed = JSON.parse(rawData);
+            if (parsed.token) callbacks.onChunk(parsed.token);
+          } catch {
+            callbacks.onChunk(rawData);
+          }
+        } else if (event === "metadata") {
+          try {
+            const parsed = JSON.parse(rawData);
+            callbacks.onMetadata?.(parsed);
+          } catch {}
+        } else if (event === "done") {
+          try {
+            const parsed: ChatResponse = JSON.parse(rawData);
+            callbacks.onDone?.(parsed);
+          } catch {}
+        }
+      }
+    }
+  } catch (err: unknown) {
+    const errorObj = err instanceof Error ? err : new Error("Streaming error");
+    callbacks.onError?.(errorObj);
+    throw errorObj;
+  }
+}
+
+/**
+ * Submits user satisfaction rating (thumbs up/down) and quality reports.
+ */
+export async function submitChatFeedback(feedback: {
+  repo_id: string;
+  message_id?: string;
+  session_id?: string;
+  rating: "up" | "down";
+  feedback_tag?: string;
+  comment?: string;
+}): Promise<{ status: string; message: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(feedback),
+    });
+
+    if (!res.ok) {
+      throw new ApiError(res.status, `Failed to submit feedback (${res.status})`);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
+/**
  * Fetches repository-derived suggested questions based on indexed files and symbols.
  * Ref: Step 29 of execution guide.
  */

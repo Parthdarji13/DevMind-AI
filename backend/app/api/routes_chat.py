@@ -6,10 +6,12 @@ Validates repository ID, question, and history; returns grounded responses with 
 import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from ..models.chat import (
     ChatRequest,
     ChatResponse,
+    ChatFeedbackRequest,
     SuggestedQuestionsResponse,
 )
 from ..services.indexing.storage import PersistentIndexStore
@@ -193,4 +195,79 @@ def get_chat_history(
     if is_mongo_available():
         return MongoStorage.get_chat_history(repo_id_clean, session_id)
     return []
+
+
+@router.post(
+    "/api/chat/stream",
+    summary="Ask a question and stream answers progressively as real-time Server-Sent Events (SSE)",
+)
+async def chat_question_stream(
+    request: ChatRequest,
+    user: UserContext = Depends(get_current_user),
+    qa_service: QAService = Depends(get_qa_service),
+):
+    # Validate question and length
+    q_stripped = request.question.strip()
+    if not q_stripped:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Question cannot be empty or whitespace.",
+        )
+    if len(q_stripped) > 2000:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Question exceeds maximum allowed length of 2000 characters.",
+        )
+
+    repo_id = request.repo_id.strip()
+    if not repo_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Repository ID must be specified.",
+        )
+
+    require_repo_access(repo_id, user)
+
+    store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
+    if not store.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repo_id}' has not been indexed yet or index is missing.",
+        )
+
+    generator = qa_service.answer_question_stream(request, user_id=user.id if user else None)
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post(
+    "/api/chat/feedback",
+    summary="Submit user satisfaction rating (thumbs up/down) and quality reports",
+)
+def submit_chat_feedback(
+    feedback: ChatFeedbackRequest,
+    user: UserContext = Depends(get_current_user),
+):
+    """Stores user thumbs-up/down ratings and quality reports in MongoDB Atlas."""
+    require_repo_access(feedback.repo_id, user)
+    record = feedback.model_dump()
+    record["user_id"] = user.id if user else None
+
+    saved = False
+    if is_mongo_available():
+        saved = MongoStorage.record_feedback(record)
+
+    return {
+        "status": "success",
+        "saved_to_mongo": saved,
+        "message": "Feedback submitted successfully. Thank you!",
+    }
+
 

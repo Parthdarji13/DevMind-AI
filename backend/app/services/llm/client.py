@@ -69,6 +69,19 @@ class BaseLLMProvider(ABC):
         """Generates completion text from system and user prompts."""
         pass
 
+    def generate_stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 1500,
+        temperature: float = 0.2,
+    ):
+        """Generates streaming tokens. Default implementation yields words from generate_response."""
+        full_text = self.generate_response(system_prompt, user_prompt, max_tokens, temperature)
+        words = re.findall(r"\S+|\s+", full_text)
+        for w in words:
+            yield w
+
 
 class GeminiLLMProvider(BaseLLMProvider):
     """Google Gemini provider (gemini-1.5-flash / gemini-2.0-flash / gemini-1.5-pro)."""
@@ -166,6 +179,60 @@ class GeminiLLMProvider(BaseLLMProvider):
             return "".join(p.get("text", "") for p in parts)
         except Exception as e:
             raise LLMAPIError(f"Failed to parse Gemini response: {str(e)}") from e
+
+    def generate_stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 1500,
+        temperature: float = 0.2,
+    ):
+        headers = {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"parts": [{"text": user_prompt}]}],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:streamGenerateContent?alt=sse"
+        streamed_any = False
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                with client.stream("POST", url, headers=headers, json=payload) as response:
+                    if response.status_code == 200:
+                        import json
+                        for line in response.iter_lines():
+                            line_str = line.strip()
+                            if line_str.startswith("data: "):
+                                data_str = line_str[6:].strip()
+                                try:
+                                    data = json.loads(data_str)
+                                    candidates = data.get("candidates", [])
+                                    if candidates:
+                                        parts = candidates[0].get("content", {}).get("parts", [])
+                                        for part in parts:
+                                            text = part.get("text", "")
+                                            if text:
+                                                streamed_any = True
+                                                yield text
+                                except Exception:
+                                    pass
+        except Exception as e:
+            logger.warning(f"Live Gemini SSE streaming error ({e}). Falling back.")
+
+        if not streamed_any:
+            # Fallback to standard generation and yield words
+            full_text = self.generate_response(system_prompt, user_prompt, max_tokens, temperature)
+            words = re.findall(r"\S+|\s+", full_text)
+            for w in words:
+                yield w
+
 
 
 class OpenAILLMProvider(BaseLLMProvider):

@@ -220,3 +220,33 @@ class MongoStorage:
         except Exception as e:
             logger.error(f"MongoDB get_chat_history failed: {e}")
             return []
+
+    # --- Feedback ---
+
+    @staticmethod
+    def record_feedback(feedback_data: dict[str, Any]) -> bool:
+        """Records user answer feedback (thumbs up/down, wrong source, comment) in 'feedback' collection."""
+        db = get_mongo_db()
+        if db is None:
+            return False
+        try:
+            data = dict(feedback_data)
+            data["created_at"] = datetime.now(timezone.utc).isoformat()
+            db.feedback.insert_one(data)
+            return True
+        except Exception as e:
+            logger.error(f"MongoDB record_feedback failed: {e}")
+            return False
+
+    @staticmethod
+    def list_feedback(repo_id: Optional[str] = None) -> list[dict[str, Any]]:
+        db = get_mongo_db()
+        if db is None:
+            return []
+        try:
+            query = {"repo_id": repo_id} if repo_id else {}
+            return list(db.feedback.find(query, {"_id": 0}).sort("created_at", -1))
+        except Exception as e:
+            logger.error(f"MongoDB list_feedback failed: {e}")
+            return []
+

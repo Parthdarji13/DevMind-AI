@@ -230,3 +230,73 @@ def test_chat_provider_errors_mapped_predictably(tmp_path: Path):
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_chat_streaming_endpoint(tmp_path: Path):
+    """Verify POST /api/chat/stream streams SSE events: metadata, token, and done."""
+    repo_id = "repo_stream_test"
+    _seed_test_repo(repo_id, tmp_path)
+    storage_mgr = IndexStorageManager(base_dir=tmp_path)
+    retrieval_mgr = HybridRetrievalManager(storage_manager=storage_mgr)
+
+    class StreamMockLLM(MockLLMProvider):
+        def generate_stream(self, system_prompt: str, user_prompt: str):
+            yield "Here "
+            yield "is "
+            yield "auth "
+            yield "[services/auth.py:10-25]."
+
+    test_qa_service = QAService(
+        retrieval_manager=retrieval_mgr,
+        llm_provider=StreamMockLLM(),
+    )
+    app.dependency_overrides[get_qa_service] = lambda: test_qa_service
+    try:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"repo_id": repo_id, "question": "Where is verify_credentials?"},
+        )
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers["content-type"]
+        body_text = resp.text
+        assert "event: metadata" in body_text
+        assert "event: token" in body_text
+        assert "event: done" in body_text
+        assert "Here" in body_text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_feedback_endpoint(tmp_path: Path):
+    """Verify POST /api/chat/feedback records ratings, tags, and comments."""
+    repo_id = "repo_feedback_test"
+    _seed_test_repo(repo_id, tmp_path)
+
+    # Positive feedback
+    resp_up = client.post(
+        "/api/chat/feedback",
+        json={
+            "repo_id": repo_id,
+            "message_id": "msg_123",
+            "rating": "up",
+        },
+    )
+    assert resp_up.status_code == 200
+    data_up = resp_up.json()
+    assert data_up["status"] == "success"
+
+    # Negative feedback with wrong_source tag
+    resp_down = client.post(
+        "/api/chat/feedback",
+        json={
+            "repo_id": repo_id,
+            "message_id": "msg_456",
+            "rating": "down",
+            "feedback_tag": "wrong_source",
+            "comment": "Line numbers did not match function definition.",
+        },
+    )
+    assert resp_down.status_code == 200
+    data_down = resp_down.json()
+    assert data_down["status"] == "success"
+
