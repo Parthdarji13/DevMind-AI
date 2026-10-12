@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from ..models.repository import RepositoryStatus, RepositorySummary
 from ..services.auth.jwt_handler import UserContext, get_current_user
+from ..services.auth.access_control import require_repo_access
 from ..services.ingestion.repository_manager import repo_manager
 from ..services.indexing.pipeline import run_repository_indexing
 
@@ -46,19 +47,13 @@ def delete_repository(
     """
     Completely removes a repository, its extracted source files,
     its BM25 indices, and vector embeddings from disk storage.
+    Enforces strict ownership access control.
     """
-    repo = repo_manager.get_repository(repo_id)
+    repo = require_repo_access(repo_id, user)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Repository '{repo_id}' not found.",
-        )
-
-    # Enforce ownership check unless it is an unassigned legacy repo
-    if repo.owner_id and repo.owner_id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to delete this repository.",
         )
 
     repo_name = repo.name
@@ -81,18 +76,13 @@ def reindex_repository(
     """
     Triggers on-demand re-indexing of an existing repository.
     Re-scans files, re-chunks, and re-computes dense/lexical representations.
+    Enforces strict ownership access control.
     """
-    repo = repo_manager.get_repository(repo_id)
+    repo = require_repo_access(repo_id, user)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Repository '{repo_id}' not found.",
-        )
-
-    if repo.owner_id and repo.owner_id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to re-index this repository.",
         )
 
     repo_dir = repo_manager.get_repo_dir(repo_id)

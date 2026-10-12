@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from ..core.config import get_settings
 from ..services.auth.jwt_handler import UserContext, get_current_user
+from ..services.auth.access_control import require_repo_access
 from ..models.repository import (
     IngestResponse,
     IngestGitRequest,
@@ -345,8 +346,9 @@ async def ingest_git_repository(
 def trigger_repository_indexing(
     repo_id: str,
     background_tasks: BackgroundTasks,
+    user: UserContext = Depends(get_current_user),
 ):
-    repo = repo_manager.get_repository(repo_id)
+    repo = require_repo_access(repo_id, user)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -361,8 +363,11 @@ def trigger_repository_indexing(
     response_model=IngestionProgress,
     summary="Get granular 5-stage ingestion progress and reconciled counters",
 )
-def get_ingestion_progress(repo_id: str):
-    repo = repo_manager.get_repository(repo_id)
+def get_ingestion_progress(
+    repo_id: str,
+    user: UserContext = Depends(get_current_user),
+):
+    repo = require_repo_access(repo_id, user)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -381,8 +386,11 @@ def get_ingestion_progress(repo_id: str):
     response_model=RepositorySummary,
     summary="Get repository ingestion and processing status",
 )
-def get_repository_status(repo_id: str):
-    repo = repo_manager.get_repository(repo_id)
+def get_repository_status(
+    repo_id: str,
+    user: UserContext = Depends(get_current_user),
+):
+    repo = require_repo_access(repo_id, user)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -394,23 +402,11 @@ def get_repository_status(repo_id: str):
 @router.get(
     "/list",
     response_model=list[RepositorySummary],
-    summary="List all indexed repositories (Scoped by user or local instance)",
+    summary="List all indexed repositories (Scoped by user)",
 )
 def list_repositories(
-    request: Request,
     user: UserContext = Depends(get_current_user),
 ):
-    # Enforce per-user privacy isolation: authenticated users only see their repositories
-    if user and user.id and not user.is_guest:
-        return repo_manager.list_repositories(owner_id=user.id)
-
-    # For local testing or guests: allow local workspace instances
-    client_host = request.client.host if request.client else "127.0.0.1"
-    if client_host in ("127.0.0.1", "localhost", "::1", "testclient"):
-        return repo_manager.list_repositories(owner_id=user.id if user else None)
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Repository listing requires authentication.",
-    )
+    # Enforce strict per-user privacy isolation: authenticated users only see their repositories
+    return repo_manager.list_repositories(owner_id=user.id)
 

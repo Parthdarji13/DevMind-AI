@@ -1,6 +1,6 @@
 """
-User account persistence, registration, and password hashing service.
-Uses PBKDF2-HMAC-SHA256 for secure password storage with unique salts.
+User account persistence, registration, password hashing, and brute-force protection.
+Uses PBKDF2-HMAC-SHA256 with 600,000 iterations (OWASP recommendation).
 Ref: PRD Section 17 & Security Architecture.
 """
 import binascii
@@ -20,6 +20,10 @@ from ...core.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+PBKDF2_ITERATIONS = 600_000
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_DURATION_SECONDS = 300  # 5 minutes
+
 
 class UserRecord(BaseModel):
     id: str
@@ -32,9 +36,9 @@ class UserRecord(BaseModel):
 
 
 def hash_password(password: str) -> str:
-    """Hashes a password with a random 16-byte salt using PBKDF2-HMAC-SHA256."""
+    """Hashes a password with a random 16-byte salt using PBKDF2-HMAC-SHA256 (600k iterations)."""
     salt = os.urandom(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
     return binascii.hexlify(salt).decode("ascii") + "$" + binascii.hexlify(dk).decode("ascii")
 
 
@@ -46,7 +50,7 @@ def verify_password(password: str, hashed_str: str) -> bool:
         salt_hex, dk_hex = hashed_str.split("$")
         salt = binascii.unhexlify(salt_hex.encode("ascii"))
         expected_dk = binascii.unhexlify(dk_hex.encode("ascii"))
-        computed_dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+        computed_dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
         return hmac.compare_digest(expected_dk, computed_dk)
     except Exception:
         return False
@@ -56,6 +60,7 @@ class UserManager:
     def __init__(self):
         self._users: dict[str, UserRecord] = {}  # keyed by user_id
         self._email_index: dict[str, str] = {}  # email.lower() -> user_id
+        self._failed_attempts: dict[str, list[float]] = {}  # email.lower() -> list of failure timestamps
         self._load_users()
 
     def _get_storage_path(self) -> Path:
@@ -76,17 +81,25 @@ class UserManager:
             logger.error(f"Error loading users from {path}: {e}")
 
     def _save_users(self) -> None:
+        """Atomic persistence using temporary file and atomic replace to prevent corruption."""
         path = self._get_storage_path()
+        tmp_path = path.with_suffix(".tmp")
         try:
             data = [u.model_dump() for u in self._users.values()]
-            path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp_path.replace(path)
         except Exception as e:
             logger.error(f"Error saving users to {path}: {e}")
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
 
     def register_user(self, email: str, password: str, name: str) -> UserRecord:
         clean_email = email.strip().lower()
         if clean_email in self._email_index:
             raise ValueError(f"An account with email '{clean_email}' already exists.")
+
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters long.")
 
         user_id = f"usr_{uuid.uuid4().hex[:12]}"
         record = UserRecord(
@@ -107,14 +120,38 @@ class UserManager:
 
     def authenticate_user(self, email: str, password: str) -> Optional[UserRecord]:
         clean_email = email.strip().lower()
+        now = time.time()
+
+        # Check brute force rate limit
+        failures = self._failed_attempts.get(clean_email, [])
+        recent_failures = [t for t in failures if (now - t) < LOCKOUT_DURATION_SECONDS]
+        self._failed_attempts[clean_email] = recent_failures
+
+        if len(recent_failures) >= MAX_FAILED_ATTEMPTS:
+            logger.warning(f"Brute force lockout triggered for email: {clean_email}")
+            raise ValueError(
+                "Too many failed login attempts. This account is temporarily locked for 5 minutes."
+            )
+
         user_id = self._email_index.get(clean_email)
         if not user_id:
+            recent_failures.append(now)
+            self._failed_attempts[clean_email] = recent_failures
             return None
+
         record = self._users.get(user_id)
         if not record or not record.password_hash:
+            recent_failures.append(now)
+            self._failed_attempts[clean_email] = recent_failures
             return None
+
         if not verify_password(password, record.password_hash):
+            recent_failures.append(now)
+            self._failed_attempts[clean_email] = recent_failures
             return None
+
+        # Reset failed attempts on success
+        self._failed_attempts.pop(clean_email, None)
         return record
 
     def get_user_by_id(self, user_id: str) -> Optional[UserRecord]:

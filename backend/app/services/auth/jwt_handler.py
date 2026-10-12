@@ -9,7 +9,7 @@ import hmac
 import json
 import time
 from typing import Optional
-from fastapi import Header
+from fastapi import Header, HTTPException, status
 from pydantic import BaseModel
 
 from ...core.config import get_settings
@@ -111,18 +111,28 @@ def get_current_user(
 ) -> UserContext:
     """
     FastAPI dependency extracting user from Authorization: Bearer <token>.
-    Falls back gracefully to Guest Developer context when no header is provided.
+    Raises 401 Unauthorized if token is missing, invalid, or expired.
     """
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:].strip()
-        data = decode_access_token(token)
-        if data and "sub" in data:
-            return UserContext(
-                id=data["sub"],
-                email=data.get("email", ""),
-                name=data.get("name", "User"),
-                picture=data.get("picture"),
-                is_guest=data.get("is_guest", False),
-            )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please provide a valid Bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    return DEFAULT_GUEST_USER
+    token = authorization[7:].strip()
+    data = decode_access_token(token)
+    if not data or "sub" not in data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired access token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return UserContext(
+        id=data["sub"],
+        email=data.get("email", ""),
+        name=data.get("name", "User"),
+        picture=data.get("picture"),
+        is_guest=data.get("is_guest", False),
+    )

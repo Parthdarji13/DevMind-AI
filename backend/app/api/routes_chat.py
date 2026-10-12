@@ -23,6 +23,8 @@ from ..services.llm.client import (
 from ..services.llm.conversation import RepositoryContextMismatchError
 from ..services.llm.qa_service import QAService
 from ..services.retrieval.vector import RepositoryNotIndexedError
+from ..services.auth.jwt_handler import UserContext, get_current_user
+from ..services.auth.access_control import require_repo_access
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ def get_qa_service() -> QAService:
 )
 async def ask_question(
     request: ChatRequest,
+    user: UserContext = Depends(get_current_user),
     qa_service: QAService = Depends(get_qa_service),
 ) -> ChatResponse:
     # 1. Validate question input
@@ -55,13 +58,15 @@ async def ask_question(
             detail="Question exceeds maximum allowed length of 2000 characters.",
         )
 
-    # 2. Validate repository exists and is indexed
+    # 2. Validate repository exists, is indexed, and authorized
     repo_id = request.repo_id.strip()
     if not repo_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Repository ID must be specified.",
         )
+
+    require_repo_access(repo_id, user)
 
     store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
     if not store.exists():
@@ -127,7 +132,10 @@ async def ask_question(
     status_code=status.HTTP_200_OK,
     summary="Get repository-derived suggested questions based on indexed files and symbols",
 )
-async def get_suggested_questions(repo_id: str) -> SuggestedQuestionsResponse:
+async def get_suggested_questions(
+    repo_id: str,
+    user: UserContext = Depends(get_current_user),
+) -> SuggestedQuestionsResponse:
     """
     Derives suggested inquiries tailored directly to repository files, symbols, and entry points.
     Fulfills Step 29: derived from verified indexed files, explicitly clarifying suggestions are exploratory.
@@ -138,6 +146,8 @@ async def get_suggested_questions(repo_id: str) -> SuggestedQuestionsResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Repository ID cannot be empty.",
         )
+
+    require_repo_access(repo_id_clean, user)
 
     store = PersistentIndexStore(repo_id_clean)
     if not store.exists():

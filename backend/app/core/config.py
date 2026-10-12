@@ -35,10 +35,23 @@ def reload_env() -> None:
 # Initial load
 reload_env()
 
+import secrets
+
+_RUNTIME_EPHEMERAL_JWT_SECRET = secrets.token_hex(32)
+
+
+def _get_jwt_secret() -> str:
+    secret = os.getenv("JWT_SECRET", "").strip()
+    if len(secret) >= 32:
+        return secret
+    return _RUNTIME_EPHEMERAL_JWT_SECRET
+
+
 from .limits import IngestionLimits, DEFAULT_LIMITS
 
 
 @dataclass
+
 class Settings:
     # Server settings
     host: str = field(default_factory=lambda: os.getenv("FASTAPI_HOST", "127.0.0.1"))
@@ -79,8 +92,9 @@ class Settings:
     embedding_model: str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2"))
 
     # Auth Settings
-    jwt_secret: str = field(default_factory=lambda: os.getenv("JWT_SECRET", "devmind_ai_super_secret_jwt_key_2026"))
+    jwt_secret: str = field(default_factory=_get_jwt_secret)
     google_client_id: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_ID", ""))
+
 
 
     def validate_llm_configuration(self) -> tuple[bool, str]:

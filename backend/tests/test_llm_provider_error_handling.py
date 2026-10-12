@@ -174,4 +174,4 @@ def test_end_to_end_recoverable_error_responses(tmp_path: Path):
             assert "Traceback (most recent call last)" not in body["detail"]
             assert len(body["detail"]) > 0
         finally:
-            app.dependency_overrides.clear()
+            app.dependency_overrides.pop(get_qa_service, None)

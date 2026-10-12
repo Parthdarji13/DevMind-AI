@@ -51,14 +51,14 @@ def test_guest_login_endpoint():
     data = resp.json()
     assert "access_token" in data
     assert data["user"]["is_guest"] is True
-    assert "demo123" in data["user"]["id"]
+    assert data["user"]["id"].startswith("guest_")
+    assert "demo123" not in data["user"]["id"]
 
 
 def test_auth_me_endpoint_with_and_without_token():
-    # Without token -> defaults to guest
+    # Without token -> strictly 401 Unauthorized
     resp_no_auth = client.get("/api/auth/me")
-    assert resp_no_auth.status_code == 200
-    assert resp_no_auth.json()["is_guest"] is True
+    assert resp_no_auth.status_code == 401
 
     # With valid token
     token = create_access_token(user_id="john_doe", email="john@example.com", name="John")
