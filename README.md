@@ -80,8 +80,9 @@ Open `.env` and set your preferred LLM provider key:
 ```env
 # LLM Provider ("google_genai" | "openai" | "groq" | "mock")
 LLM_PROVIDER=google_genai
-LLM_MODEL=gemini-2.0-flash
+LLM_MODEL=gemini-flash-latest
 GEMINI_API_KEY=your_gemini_api_key_here
+
 
 # Embedding Provider ("local" | "google_genai" | "openai")
 EMBEDDING_PROVIDER=local
