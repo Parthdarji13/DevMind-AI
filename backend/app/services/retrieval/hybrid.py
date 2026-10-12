@@ -220,16 +220,21 @@ class HybridRetriever:
         # If user query references a file path, filename, or symbol name, boost its fused score
         # so exact lexical matches aren't drowned out by generic semantic vector noise.
         query_lower = query.lower()
+        is_root_or_overview_query = any(k in query_lower for k in ("root", "entrypoint", "config", "architecture", "overview", "setup", "manifest"))
         for cid, info in fused_map.items():
             c = info["chunk"]
             c_path_lower = c.file_path.lower()
-            file_name = c_path_lower.split("/")[-1]
+            file_name = c_path_lower.replace("\\", "/").split("/")[-1]
             if c_path_lower in query_lower:
                 info["rrf_score"] += 0.05
             elif len(file_name) > 3 and file_name in query_lower:
                 info["rrf_score"] += 0.03
             if c.symbol_name and len(c.symbol_name) > 2 and c.symbol_name.lower() in query_lower:
                 info["rrf_score"] += 0.02
+            # If user asks about root files, configuration, entrypoints or architecture overview,
+            # boost top-level files (package.json, tsconfig, main.py, README, etc.) so they are surfaced
+            if is_root_or_overview_query and ("/" not in c.file_path and "\\" not in c.file_path):
+                info["rrf_score"] += 0.04
 
         # 4. Sort unique items by fused RRF score descending
         ranked_candidates = sorted(

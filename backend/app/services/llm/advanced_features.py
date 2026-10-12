@@ -309,28 +309,46 @@ class AdvancedFeaturesService:
             if mod_name not in modules_map:
                 # Infer layer category
                 m_lower = mod_name.lower()
-                if any(k in m_lower for k in ("api", "route", "controller", "endpoint")):
+                if mod_name == "root":
+                    m_type = "core"
+                    m_label = "Root Configuration"
+                    m_desc = "Project root files, build manifests, configuration scripts, and top-level entrypoints."
+                elif any(k in m_lower for k in ("api", "route", "controller", "endpoint")):
                     m_type = "api"
+                    m_label = mod_name.capitalize()
+                    m_desc = f"API routing layer handling endpoints and request controllers in {mod_name}."
                 elif any(k in m_lower for k in ("service", "business", "logic")):
                     m_type = "services"
+                    m_label = mod_name.capitalize()
+                    m_desc = f"Service layer orchestrating business logic and workflows in {mod_name}."
                 elif any(k in m_lower for k in ("model", "schema", "entity", "dto")):
                     m_type = "models"
+                    m_label = mod_name.capitalize()
+                    m_desc = f"Data models, database entities, and validation schemas in {mod_name}."
                 elif any(k in m_lower for k in ("db", "database", "store", "mongo", "sql")):
                     m_type = "db"
+                    m_label = mod_name.capitalize()
+                    m_desc = f"Database drivers, repositories, and persistence adapters in {mod_name}."
                 elif any(k in m_lower for k in ("core", "config", "settings", "env")):
                     m_type = "core"
+                    m_label = mod_name.capitalize()
+                    m_desc = f"Core configurations, runtime settings, and cross-cutting utilities in {mod_name}."
                 elif any(k in m_lower for k in ("util", "helper", "common")):
                     m_type = "utils"
+                    m_label = mod_name.capitalize()
+                    m_desc = f"Common helper utilities and shared formatting functions in {mod_name}."
                 else:
                     m_type = "other"
+                    m_label = mod_name.capitalize()
+                    m_desc = f"Module containing {mod_name} components and logic."
 
                 modules_map[mod_name] = {
                     "id": mod_name,
-                    "label": mod_name.capitalize(),
+                    "label": m_label,
                     "module_type": m_type,
                     "files": set(),
                     "line_count": 0,
-                    "description": f"Module containing {mod_name} components and logic.",
+                    "description": m_desc,
                 }
 
             modules_map[mod_name]["files"].add(c.file_path)
@@ -362,6 +380,7 @@ class AdvancedFeaturesService:
         # 3. Assemble nodes and edges
         nodes = []
         for mod_id, m in modules_map.items():
+            key_files = sorted(list(m["files"]))[:6]
             nodes.append(
                 ArchitectureMapNode(
                     id=m["id"],
@@ -370,6 +389,7 @@ class AdvancedFeaturesService:
                     file_count=len(m["files"]),
                     line_count=m["line_count"],
                     description=m["description"],
+                    key_files=key_files,
                 )
             )
 

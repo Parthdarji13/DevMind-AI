@@ -176,6 +176,7 @@ export interface ArchitectureMapNode {
   file_count: number;
   line_count: number;
   description?: string | null;
+  key_files?: string[];
 }
 
 export interface ArchitectureMapEdge {

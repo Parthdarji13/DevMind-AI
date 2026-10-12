@@ -75,7 +75,17 @@ export const ArchitectureMapModal: React.FC<ArchitectureMapModalProps> = ({
 
   const handleAskAboutModule = (node: ArchitectureMapNode) => {
     if (onSelectQuestion) {
-      onSelectQuestion(`Explain the architecture and responsibilities of the ${node.label} module.`);
+      if (node.id === "root") {
+        const fileSample = node.key_files && node.key_files.length > 0
+          ? ` (${node.key_files.slice(0, 3).join(", ")})`
+          : " (package.json, next.config, README)";
+        onSelectQuestion(`Explain the project configuration, build manifests, and responsibilities of the root files${fileSample}.`);
+      } else {
+        const fileSample = node.key_files && node.key_files.length > 0
+          ? ` (${node.key_files.slice(0, 3).join(", ")})`
+          : "";
+        onSelectQuestion(`Explain the architecture, structure, and responsibilities of the ${node.label} (${node.id}) module${fileSample}.`);
+      }
       onClose();
     }
   };
@@ -236,16 +246,33 @@ export const ArchitectureMapModal: React.FC<ArchitectureMapModalProps> = ({
                           {selectedNode.description || "Core repository component handling internal routines."}
                         </p>
                       </div>
+
+                      {selectedNode.key_files && selectedNode.key_files.length > 0 && (
+                        <div className="py-1">
+                          <span className="block text-[11px] font-semibold text-[#1C2024] mb-1">Key Files:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedNode.key_files.map((kf, kidx) => (
+                              <span key={kidx} className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white border border-[#E5E2DB] text-[#0B6E5F]">
+                                {kf}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => handleAskAboutModule(selectedNode)}
-                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#1C2024] hover:bg-black transition-colors cursor-pointer shadow-xs"
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#0B6E5F] hover:bg-[#085449] transition-colors cursor-pointer shadow-xs"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
-                    <span>Ask Question About This Module</span>
+                    <span>
+                      {selectedNode.id === "root"
+                        ? "Ask About Root Configuration Files"
+                        : `Ask About ${selectedNode.label} Module`}
+                    </span>
                   </button>
                 </div>
               )}

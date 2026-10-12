@@ -132,6 +132,7 @@ class ArchitectureMapNode(BaseModel):
     file_count: int = Field(default=1, description="Number of files inside module")
     line_count: int = Field(default=0, description="Total LOC in module")
     description: Optional[str] = Field(None, description="Inferred role of this module")
+    key_files: list[str] = Field(default_factory=list, description="Top key files in this module")
 
 
 class ArchitectureMapEdge(BaseModel):
