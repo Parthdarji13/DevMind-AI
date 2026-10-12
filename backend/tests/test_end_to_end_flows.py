@@ -94,7 +94,7 @@ def test_flow_1_zip_upload_to_citation(tmp_path: Path):
     assert upload_resp.status_code == 201
     upload_data = upload_resp.json()
     repo_id = upload_data["repo_id"]
-    assert upload_data["status"] == "ready"
+    assert upload_data["status"] in ("processing", "ready")
     assert upload_data["stats"]["discovered_files"] == 4
     assert upload_data["stats"]["included_files"] == 3  # .env was filtered out!
     assert upload_data["stats"]["skipped_files"] == 1
@@ -175,7 +175,8 @@ def test_flow_2_git_url_to_citation(tmp_path: Path):
         assert git_resp.status_code == 201
         git_data = git_resp.json()
         repo_id = git_data["repo_id"]
-        assert git_data["status"] == "ready"
+        assert git_data["status"] in ("processing", "ready")
+
 
         # 2. Check progress
         prog_resp = client.get(f"/api/ingest/progress/{repo_id}")

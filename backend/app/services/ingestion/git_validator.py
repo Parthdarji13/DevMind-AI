@@ -7,7 +7,9 @@ from dataclasses import dataclass
 import ipaddress
 import re
 import socket
+from typing import Optional
 from urllib.parse import urlparse
+
 
 
 class GitValidationError(Exception):
@@ -41,6 +43,7 @@ class GitValidationResult:
     normalized_url: str
     repo_name: str
     host: str
+    resolved_ip: Optional[str] = None
 
 
 def is_ip_private_or_restricted(ip_str: str) -> bool:
@@ -129,21 +132,25 @@ def validate_git_url(raw_url: str, resolve_dns: bool = True) -> GitValidationRes
         raise SSRFBlockedError(f"Access to local or internal network target '{host}' is blocked.")
 
     # 4. Check if host is direct IP address
+    verified_ip = None
     try:
         ip = ipaddress.ip_address(host)
         if is_ip_private_or_restricted(str(ip)):
             raise SSRFBlockedError(f"Access to private or restricted IP address '{host}' is blocked.")
+        verified_ip = str(ip)
     except ValueError:
         # Not a direct IP literal, validate DNS resolution if enabled
         if resolve_dns:
             try:
                 addr_info = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
                 for entry in addr_info:
-                    resolved_ip = entry[4][0]
-                    if is_ip_private_or_restricted(resolved_ip):
+                    ip_candidate = entry[4][0]
+                    if is_ip_private_or_restricted(ip_candidate):
                         raise SSRFBlockedError(
-                            f"Host '{host}' resolves to restricted IP '{resolved_ip}'. Access blocked."
+                            f"Host '{host}' resolves to restricted IP '{ip_candidate}'. Access blocked."
                         )
+                    if not verified_ip:
+                        verified_ip = ip_candidate
             except socket.gaierror as e:
                 # If DNS cannot resolve, it cannot be cloned
                 raise MalformedGitUrlError(f"Cannot resolve host '{host}': {str(e)}") from e
@@ -175,4 +182,5 @@ def validate_git_url(raw_url: str, resolve_dns: bool = True) -> GitValidationRes
         normalized_url=normalized_url,
         repo_name=repo_name,
         host=host,
+        resolved_ip=verified_ip,
     )

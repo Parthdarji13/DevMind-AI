@@ -117,7 +117,8 @@ def test_api_ingest_git_endpoint_success(tmp_path):
 
         assert response.status_code == 201
         data = response.json()
-        assert data["status"] == "ready"
+        assert data["status"] in ("processing", "ready")
+
         assert data["source_type"] == "git"
         assert data["repo_name"] == "test-repo"
         assert data["stats"]["included_files"] == 2

@@ -49,16 +49,27 @@ def clone_and_filter_public_repo(
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_ASKPASS"] = "echo"
 
-    # Shallow clone with depth 1, single branch
+    # Shallow clone with depth 1, single branch, no redirects, pinned DNS to prevent rebinding
     cmd = [
         "git",
+        "-c", "http.followRedirects=false",
+    ]
+    if os.name == "nt":
+        cmd.extend(["-c", "http.sslBackend=schannel"])
+
+    if validation.resolved_ip and validation.host:
+        # Prevent DNS Rebinding: pin hostname resolution to the pre-validated IP
+        cmd.extend(["-c", f"http.curloptResolve={validation.host}:443:{validation.resolved_ip}"])
+
+    cmd.extend([
         "clone",
         "--depth", "1",
         "--single-branch",
         "--no-tags",
         validation.normalized_url,
         str(target_path),
-    ]
+    ])
+
 
     try:
         result = subprocess.run(

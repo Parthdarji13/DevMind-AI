@@ -120,28 +120,15 @@ class QAService:
         )
         validated_citations = validation_report.valid_citations
 
-        # 8. Fallback: if model did not use inline citations but chunks exist and model answered
-        # attach the top retrieved chunk as citation reference so user can inspect evidence
-        if not validated_citations and retrieved_chunks and not is_abstention(answer):
-            top_chunk = retrieved_chunks[0]
-            lines = top_chunk.content.splitlines()
-            snippet = "\n".join(lines[:min(5, len(lines))])
-            validated_citations.append(
-                Citation(
-                    file_path=top_chunk.file_path,
-                    start_line=top_chunk.start_line,
-                    end_line=top_chunk.end_line,
-                    snippet=snippet,
-                    chunk_id=top_chunk.chunk_id,
-                )
-            )
+        # 8. Never fabricate un-cited chunks: only genuinely cited references are included
+        # (Fix for citation integrity audit: do not force retrieved_chunks[0] if model did not cite it)
 
         # 9. Record completed turn in session if session_id active
         if session_id:
             self.conversation_manager.record_turn(session_id, repo_id, question, answer)
 
         # 10. Check flags
-        abstained = is_abstention(answer)
+        abstained = is_abstention(answer, has_citations=bool(validated_citations))
         inference_flag = has_inference(answer)
 
         return ChatResponse(

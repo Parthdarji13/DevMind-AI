@@ -1,6 +1,8 @@
 from .embeddings import (
     BaseEmbeddingProvider,
     LocalSemanticEmbeddingProvider,
+    LocalHashEmbeddingProvider,
+    SentenceTransformerEmbeddingProvider,
     GeminiEmbeddingProvider,
     OpenAIEmbeddingProvider,
     MockEmbeddingProvider,
@@ -19,6 +21,8 @@ from .pipeline import run_repository_indexing
 __all__ = [
     "BaseEmbeddingProvider",
     "LocalSemanticEmbeddingProvider",
+    "LocalHashEmbeddingProvider",
+    "SentenceTransformerEmbeddingProvider",
     "GeminiEmbeddingProvider",
     "OpenAIEmbeddingProvider",
     "MockEmbeddingProvider",
@@ -31,3 +35,4 @@ __all__ = [
     "index_storage_manager",
     "run_repository_indexing",
 ]
+

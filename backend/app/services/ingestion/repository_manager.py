@@ -143,6 +143,46 @@ class RepositoryManager:
         # Remove from in-memory cache
         self._repositories.pop(repo_id, None)
 
+    def cleanup_expired_repositories(self, max_age_days: int = 7) -> int:
+        """
+        Scans all repositories and deletes any data, temporary files,
+        and persistent indices older than max_age_days (default: 7 days).
+        Ref: PRD Section 17.10 Retention Policy.
+        """
+        now = datetime.now(timezone.utc)
+        cleaned_count = 0
+        repo_ids = list(self._repositories.keys())
+
+        for repo_id in repo_ids:
+            repo = self._repositories.get(repo_id)
+            if not repo or not repo.created_at:
+                continue
+            try:
+                created = datetime.fromisoformat(repo.created_at)
+                age_days = (now - created).total_seconds() / 86400.0
+                if age_days >= max_age_days:
+                    self.cleanup_repository(repo_id)
+                    cleaned_count += 1
+            except Exception:
+                continue
+
+        # Also cleanup un-tracked directories in indices or temp_repos exceeding max_age
+        for folder in (settings.temp_storage_dir, settings.indices_dir, settings.data_dir):
+            if not folder.exists():
+                continue
+            for item in folder.iterdir():
+                if item.is_dir():
+                    try:
+                        mtime = item.stat().st_mtime
+                        age_days = (now.timestamp() - mtime) / 86400.0
+                        if age_days >= max_age_days:
+                            shutil.rmtree(item, ignore_errors=True)
+                            cleaned_count += 1
+                    except Exception:
+                        continue
+
+        return cleaned_count
+
 
 # Global singleton instance
 repo_manager = RepositoryManager()

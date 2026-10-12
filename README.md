@@ -174,7 +174,7 @@ npm run build
 | Maximum Archive Upload | 100 MB | Clean 400 Bad Request with explicit limit message |
 | Maximum File Count | 3,000 files | Files beyond capacity are pruned with breakdown reported |
 | Maximum File Size | 1,000 KB (1 MB) | Skipped with `oversized` category recorded |
-| Ingestion Timeout | 30 seconds | Aborts clone with clean 408/400 timeout error |
+| Ingestion Timeout | 60 seconds | Aborts clone with clean 504 Gateway Timeout error |
 | Local Retention Window | 7 days | Index metadata retained; cleaned automatically or on reset |
 | Query Length | 2,000 characters | Returns HTTP 422 Unprocessable Content |
 

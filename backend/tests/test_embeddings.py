@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.indexing.embeddings import (
     LocalSemanticEmbeddingProvider,
+    LocalHashEmbeddingProvider,
+    SentenceTransformerEmbeddingProvider,
     MockEmbeddingProvider,
     GeminiEmbeddingProvider,
     OpenAIEmbeddingProvider,
@@ -92,10 +94,27 @@ def test_missing_credentials_fails_explicitly():
 
 def test_factory_creation():
     local_p = get_embedding_provider("local")
-    assert isinstance(local_p, LocalSemanticEmbeddingProvider)
+    assert isinstance(local_p, (LocalSemanticEmbeddingProvider, SentenceTransformerEmbeddingProvider))
+
+    local_hash_p = get_embedding_provider("local_hash")
+    assert isinstance(local_hash_p, LocalHashEmbeddingProvider)
 
     mock_p = get_embedding_provider("mock")
     assert isinstance(mock_p, MockEmbeddingProvider)
 
     with pytest.raises(EmbeddingConfigurationError):
         get_embedding_provider("unsupported_provider_xyz")
+
+
+def test_sentence_transformer_error_handling_when_not_installed():
+    try:
+        import sentence_transformers  # noqa: F401
+        # If installed, provider initializes cleanly
+        provider = SentenceTransformerEmbeddingProvider()
+        assert provider.dimension > 0
+    except ImportError:
+        # If not installed, raises clear configuration error
+        with pytest.raises(EmbeddingConfigurationError) as exc_info:
+            SentenceTransformerEmbeddingProvider()
+        assert "sentence-transformers" in str(exc_info.value)
+

@@ -3,7 +3,7 @@ Ingestion API routes for ZIP uploads and repository management.
 Ref: PRD Section 6 (FR-01, FR-08), Section 17.4; Step 9 of execution guide.
 """
 from pathlib import Path
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile, status
 from ..core.config import get_settings
 from ..models.repository import (
     IngestResponse,
@@ -57,16 +57,41 @@ async def upload_zip_repository(
             detail="Invalid file format. Please upload a valid .zip archive.",
         )
 
-    # 2. Read archive content into memory safely
-    try:
-        content = await file.read()
-    except Exception as e:
+    # 2. Bounded stream reading to enforce max size without allocating unbounded memory (Problem 4)
+    max_bytes = settings.limits.max_zip_bytes
+    if hasattr(file, "size") and file.size is not None and file.size > max_bytes:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to read uploaded file: {str(e)}",
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Archive size exceeds maximum allowed limit of {settings.limits.max_zip_mb} MB.",
         )
 
-    # 3. Size check before creating repo
+    chunks: list[bytes] = []
+    total_bytes = 0
+    chunk_size = 1024 * 1024  # 1MB chunks
+    try:
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > max_bytes:
+                del chunks
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"Archive size exceeds maximum allowed limit of {settings.limits.max_zip_mb} MB.",
+                )
+            chunks.append(chunk)
+        content = b"".join(chunks)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to read uploaded file: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to read uploaded archive file.",
+        )
+
+    # 3. Double-check archive size
     if not settings.limits.validate_archive_size(len(content)):
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -126,12 +151,13 @@ async def upload_zip_repository(
             detail=f"Security violation in archive: {str(e)}",
         )
     except Exception as e:
+        logger.error(f"Unexpected error extracting archive: {e}", exc_info=True)
         if repo.progress:
-            ProgressTracker.fail(repo.progress, 1, str(e))
+            ProgressTracker.fail(repo.progress, 1, "An unexpected extraction error occurred.")
         repo_manager.cleanup_repository(repo.repo_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error extracting archive: {str(e)}",
+            detail="An unexpected internal error occurred while extracting the archive.",
         )
 
     # 6. Scan and filter files
@@ -182,11 +208,11 @@ async def upload_zip_repository(
 
     return IngestResponse(
         repo_id=repo.repo_id,
-        status=RepositoryStatus.READY,
+        status=RepositoryStatus.PROCESSING,
         source_type=SourceType.ZIP,
         repo_name=file.filename,
         stats=stats,
-        message="Repository uploaded, extracted, and queued for indexing.",
+        message="Repository uploaded, extracted, and queued for background indexing.",
     )
 
 
@@ -260,12 +286,13 @@ async def ingest_git_repository(
             detail=str(e),
         )
     except Exception as e:
+        logger.error(f"Unexpected error ingesting Git repository: {e}", exc_info=True)
         if repo.progress:
-            ProgressTracker.fail(repo.progress, 1, str(e))
+            ProgressTracker.fail(repo.progress, 1, "An unexpected git ingestion error occurred.")
         repo_manager.cleanup_repository(repo.repo_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error ingesting Git repository: {str(e)}",
+            detail="An unexpected internal error occurred while processing the Git repository.",
         )
 
     # 4. Update repository stats and state
@@ -289,11 +316,11 @@ async def ingest_git_repository(
 
     return IngestResponse(
         repo_id=repo.repo_id,
-        status=RepositoryStatus.READY,
+        status=RepositoryStatus.PROCESSING,
         source_type=SourceType.GIT,
         repo_name=validation.repo_name,
         stats=stats,
-        message="Public Git repository cloned, filtered, and queued for indexing.",
+        message="Public Git repository cloned, filtered, and queued for background indexing.",
     )
 
 
@@ -353,7 +380,14 @@ def get_repository_status(repo_id: str):
 @router.get(
     "/list",
     response_model=list[RepositorySummary],
-    summary="List all indexed repositories",
+    summary="List all indexed repositories (Local workspace instances only)",
 )
-def list_repositories():
+def list_repositories(request: Request):
+    # Protect privacy: restrict listing to local loopback workspace instances
+    client_host = request.client.host if request.client else "127.0.0.1"
+    if client_host not in ("127.0.0.1", "localhost", "::1", "testclient"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Repository listing is restricted to local workspace instances.",
+        )
     return repo_manager.list_repositories()

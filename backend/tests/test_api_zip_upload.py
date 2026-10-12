@@ -43,7 +43,7 @@ def test_upload_valid_zip_success():
     assert response.status_code == 201
     data = response.json()
     assert "repo_id" in data
-    assert data["status"] == "ready"
+    assert data["status"] in ("processing", "ready")
     assert data["source_type"] == "zip"
     assert data["repo_name"] == "project.zip"
 

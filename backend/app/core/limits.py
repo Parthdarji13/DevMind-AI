@@ -11,7 +11,7 @@ class IngestionLimits:
     max_files: int = int(os.getenv("MAX_FILES", "3000"))
     max_file_kb: int = int(os.getenv("MAX_FILE_KB", "1000"))
     retention_days: int = int(os.getenv("RETENTION_DAYS", "7"))
-    git_clone_timeout_seconds: int = int(os.getenv("GIT_CLONE_TIMEOUT_SECONDS", "30"))
+    git_clone_timeout_seconds: int = int(os.getenv("GIT_CLONE_TIMEOUT_SECONDS", "60"))
 
     @property
     def max_zip_bytes(self) -> int:

@@ -17,6 +17,9 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # Startup: ensure storage directories are ready
     settings.ensure_storage_dirs()
+    # Enforce 7-day retention policy cleanup on startup (PRD Section 17.10)
+    from .services.ingestion.repository_manager import repo_manager
+    repo_manager.cleanup_expired_repositories(settings.limits.retention_days)
     yield
     # Shutdown cleanup if any
 

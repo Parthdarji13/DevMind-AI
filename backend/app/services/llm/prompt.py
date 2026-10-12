@@ -200,10 +200,26 @@ def extract_citations(text: str) -> list[Citation]:
     return citations
 
 
-def is_abstention(text: str) -> bool:
-    """Detects whether the response abstains due to missing or insufficient evidence."""
+def is_abstention(text: str, has_citations: bool = False) -> bool:
+    """
+    Detects whether the response abstains due to missing or insufficient evidence.
+    Guards against false positives when verified citations exist or when describing code attributes.
+    """
+    if has_citations:
+        return False
+
     t_lower = text.lower()
-    return any(phrase in t_lower for phrase in ABSTENTION_PHRASES)
+    has_phrase = any(phrase in t_lower for phrase in ABSTENTION_PHRASES)
+    if not has_phrase:
+        return False
+
+    # Guard against false positives: if matching generic "does not contain", ensure it anchors to evidence context
+    if "does not contain" in t_lower or "do not contain" in t_lower:
+        evidence_anchors = ["evidence", "codebase", "information", "answer", "retrieved", "mention", "chunk"]
+        if not any(anchor in t_lower for anchor in evidence_anchors):
+            return False
+
+    return True
 
 
 def has_inference(text: str) -> bool:

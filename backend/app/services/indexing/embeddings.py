@@ -279,6 +279,51 @@ class MockEmbeddingProvider(BaseEmbeddingProvider):
         return results
 
 
+class SentenceTransformerEmbeddingProvider(BaseEmbeddingProvider):
+    """
+    True local dense semantic neural embedding provider powered by sentence-transformers.
+    Default model is 'all-MiniLM-L6-v2' (384 dimensions).
+    Runs offline on CPU/GPU without external network calls.
+    """
+
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore
+        except ImportError as e:
+            raise EmbeddingConfigurationError(
+                "The 'sentence-transformers' package is required for local dense neural embeddings. "
+                "Install it via 'pip install sentence-transformers' or use EMBEDDING_PROVIDER=local_hash "
+                "or EMBEDDING_PROVIDER=google_genai."
+            ) from e
+
+        self._model_name = model_name
+        self._model = SentenceTransformer(model_name)
+        self._dimension = int(self._model.get_sentence_embedding_dimension())
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    def embed_texts(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
+        if not texts:
+            return []
+        embeddings = self._model.encode(
+            texts,
+            batch_size=batch_size,
+            show_progress_bar=False,
+            normalize_embeddings=True,
+        )
+        return embeddings.tolist()
+
+
+# Alias for explicit zero-dependency hash projection
+LocalHashEmbeddingProvider = LocalSemanticEmbeddingProvider
+
+
 def get_embedding_provider(provider_name: Optional[str] = None) -> BaseEmbeddingProvider:
     """
     Factory creating configured embedding provider.
@@ -287,7 +332,15 @@ def get_embedding_provider(provider_name: Optional[str] = None) -> BaseEmbedding
     settings = get_settings()
     choice = (provider_name or settings.embedding_provider).lower()
 
-    if choice == "local":
+    if choice in ("sentence-transformers", "sentence_transformers"):
+        return SentenceTransformerEmbeddingProvider()
+    elif choice in ("local", "local_semantic"):
+        try:
+            import sentence_transformers  # noqa: F401
+            return SentenceTransformerEmbeddingProvider()
+        except ImportError:
+            return LocalSemanticEmbeddingProvider()
+    elif choice in ("local_hash", "hash"):
         return LocalSemanticEmbeddingProvider()
     elif choice in ("google", "google_genai", "gemini"):
         return GeminiEmbeddingProvider(api_key=settings.gemini_api_key)
@@ -297,5 +350,6 @@ def get_embedding_provider(provider_name: Optional[str] = None) -> BaseEmbedding
         return MockEmbeddingProvider()
     else:
         raise EmbeddingConfigurationError(
-            f"Unsupported embedding provider: '{choice}'. Supported: 'local', 'google_genai', 'openai', 'mock'."
+            f"Unsupported embedding provider: '{choice}'. Supported: 'sentence-transformers', 'local', 'local_hash', 'google_genai', 'openai', 'mock'."
         )
+
