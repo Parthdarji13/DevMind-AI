@@ -101,7 +101,7 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
               key={idx}
               type="button"
               onClick={() => onSelectQuestion(item.question)}
-              className="group text-left p-3.5 rounded-xl border border-[#EAE8E2] hover:border-[#0B6E5F] bg-[#FAF9F6] hover:bg-[#E6F4F1]/30 transition-all cursor-pointer flex flex-col justify-between gap-2.5 shadow-sm hover:shadow relative overflow-hidden"
+              className="group text-left p-3 rounded-xl border border-[#EAE8E2] hover:border-[#0B6E5F] bg-[#FAF9F6] hover:bg-[#E6F4F1]/30 transition-all cursor-pointer flex flex-col justify-between gap-2 shadow-xs hover:shadow-sm relative overflow-hidden"
             >
               <div className="space-y-2 w-full">
                 {/* Meta row: Category pill + source file reference */}

@@ -182,13 +182,13 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
           {messages.length === 0 ? (
             /* Empty State / Starter Questions */
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto py-12 space-y-6">
-              <div className="w-14 h-14 rounded-2xl bg-[#E6F4F1] text-[#0B6E5F] flex items-center justify-center shadow-xs">
-                <Sparkles className="w-7 h-7" />
+            <div className="w-full max-w-2xl mx-auto py-2 sm:py-4 flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#E6F4F1] text-[#0B6E5F] flex items-center justify-center shadow-xs">
+                <Sparkles className="w-6 h-6" />
               </div>
 
-              <div className="space-y-1.5">
-                <h3 className="text-lg font-bold text-[#1C2024]">
+              <div className="space-y-1 max-w-lg">
+                <h3 className="text-base sm:text-lg font-bold text-[#1C2024]">
                   Ask your codebase anything
                 </h3>
                 <p className="text-xs text-[#636A74] leading-relaxed">
