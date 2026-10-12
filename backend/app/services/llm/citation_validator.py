@@ -48,7 +48,7 @@ class CitationValidator:
     CITATION_PATTERNS = [
         # 1. [File: path/to/file.py, Lines: 10-25] or [File: path/to/file.py, Line: 10]
         re.compile(
-            r"\[(?:File:\s*)?([A-Za-z0-9_\-\./\\]+),\s*Lines?:\s*(\d+)(?:-(\d+))?\]",
+            r"\[(?:File:\s*)?([A-Za-z0-9_\-\./\\]+),\s*Lines?:?\s*(\d+)(?:-(\d+))?.*?\]",
             re.IGNORECASE,
         ),
         # 2. [path/to/file.py:10-25] or [path/to/file.py:10]

@@ -114,8 +114,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
         {/* Skipped Summary */}
         <div className="border-t border-[#EAE8E2] pt-3 text-xs text-[#636A74] space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span>Skipped files:</span>
+          <div
+            className="flex items-center justify-between"
+            title="Third-party packages (node_modules), media, and temp caches excluded so the AI focuses purely on your source code."
+          >
+            <span>Non-code excluded:</span>
             <span className="font-mono font-semibold text-[#1C2024]">{skippedCount.toLocaleString()}</span>
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-[#636A74]">

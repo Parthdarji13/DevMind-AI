@@ -107,7 +107,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
         {/* Main Message Content */}
         <div className="bg-white border border-[#E5E2DB] rounded-2xl rounded-tl-xs p-5 shadow-xs">
-          <SafeMarkdown content={message.content} />
+          <SafeMarkdown
+            content={message.content}
+            citations={message.citations}
+            onCitationClick={(cit) => {
+              if (onOpenDrawer && message.citations) {
+                const idx = message.citations.findIndex(
+                  (c) => c.file_path === cit.file_path && c.start_line === cit.start_line
+                );
+                onOpenDrawer(message.citations, idx >= 0 ? idx : 0);
+              }
+            }}
+          />
         </div>
 
         {/* Verified Citations Row */}

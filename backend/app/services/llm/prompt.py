@@ -30,6 +30,10 @@ NON-NEGOTIABLE GROUNDING RULES:
    - When the user asks in Hindi (Devanagari script) or Hinglish (Hindi written using Latin script, e.g. "kaise handle hota hai", "kaha define hai"), respond in the user's chosen language and style naturally.
    - NON-NEGOTIABLE CODE PRESERVATION: Preserve ALL file paths (e.g. `src/lib/auth.ts`), class names, function names, variable names, HTTP methods, and API routes in their exact verbatim English/code form. NEVER translate code symbols, filenames, or technical terms into Hindi or Devanagari.
    - EXACT CITATION FORMAT: Every citation MUST strictly adhere to the standard English format: `[File: <file_path>, Lines: <start>-<end>]`. Never translate citation tags or line bounds.
+7. CLEAN FORMATTING & READABILITY:
+   - Organize answers with clean Markdown headings (`### 1. ...`), concise bullet points, and inline code tags (`code`).
+   - Keep answers well-structured and executive. Show short, focused 2-4 line code snippets only when they clarify an explanation; do not dump massive repetitive blocks.
+   - Use clean bold lead-ins (e.g. `1. **Heading**: Explanation... [File: ..., Lines: ...]`) and avoid awkward double punctuation like colons after citations or dashes after colons.
 """
 
 ABSTENTION_PHRASES = [

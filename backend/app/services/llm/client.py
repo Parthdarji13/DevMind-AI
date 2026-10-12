@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 import logging
 import os
 import re
+import time
 from typing import Optional
 import httpx
 
@@ -86,7 +87,6 @@ class GeminiLLMProvider(BaseLLMProvider):
         max_tokens: int = 1500,
         temperature: float = 0.2,
     ) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
         headers = {
             "x-goog-api-key": self.api_key,
             "Content-Type": "application/json",
@@ -100,28 +100,65 @@ class GeminiLLMProvider(BaseLLMProvider):
             },
         }
 
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                resp = client.post(url, headers=headers, json=payload)
-                # If requested model returned 404 (e.g. deprecated name), fallback to gemini-flash-latest
-                if resp.status_code == 404 and self.model_name != "gemini-flash-latest":
-                    fallback_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
-                    resp = client.post(fallback_url, headers=headers, json=payload)
-        except httpx.TimeoutException as e:
-            raise LLMTimeoutError(f"Gemini API request timed out after {self.timeout}s.") from e
-        except Exception as e:
-            raise LLMAPIError(sanitize_error_text(f"Connection error to Gemini API: {str(e)}")) from e
+        # Candidate models with automatic fallback on 404/503/429
+        models_to_try = [self.model_name]
+        for fallback in ["gemini-flash-latest", "gemini-flash-lite-latest"]:
+            if fallback not in models_to_try:
+                models_to_try.append(fallback)
 
-        if resp.status_code == 429:
-            raise LLMRateLimitError("Gemini API rate limit exceeded (HTTP 429).")
-        elif resp.status_code == 401 or resp.status_code == 403:
+        last_resp = None
+        last_error = None
+
+        with httpx.Client(timeout=self.timeout) as client:
+            for model in models_to_try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+                for attempt in range(2):  # Try current model with 1 retry on 503/429
+                    try:
+                        resp = client.post(url, headers=headers, json=payload)
+                        last_resp = resp
+                        if resp.status_code == 200:
+                            break
+                        elif resp.status_code in (503, 429):
+                            # Temporary high demand or rate limit: wait briefly and retry or fallback
+                            logger.warning(
+                                f"Gemini model {model} returned HTTP {resp.status_code} (attempt {attempt + 1}). Retrying/falling back..."
+                            )
+                            time.sleep(1.2)
+                            continue
+                        elif resp.status_code == 404:
+                            # Deprecated / unserved model name: try next candidate
+                            break
+                        elif resp.status_code in (401, 403):
+                            raise LLMConfigurationError("Gemini API authentication failed. Verify GEMINI_API_KEY.")
+                        else:
+                            break
+                    except httpx.TimeoutException as e:
+                        last_error = e
+                        break
+                    except Exception as e:
+                        last_error = e
+                        break
+
+                if last_resp is not None and last_resp.status_code == 200:
+                    break
+
+        if last_resp is None:
+            if isinstance(last_error, httpx.TimeoutException):
+                raise LLMTimeoutError(f"Gemini API request timed out after {self.timeout}s.") from last_error
+            raise LLMAPIError(sanitize_error_text(f"Connection error to Gemini API: {str(last_error)}"))
+
+        if last_resp.status_code == 429:
+            raise LLMRateLimitError("Gemini API rate limit exceeded (HTTP 429). Please retry in a moment.")
+        elif last_resp.status_code in (401, 403):
             raise LLMConfigurationError("Gemini API authentication failed. Verify GEMINI_API_KEY.")
-        elif resp.status_code != 200:
-            clean_text = sanitize_error_text(resp.text[:200])
-            raise LLMAPIError(f"Gemini API returned HTTP {resp.status_code}: {clean_text}")
+        elif last_resp.status_code == 503:
+            raise LLMAPIError("Gemini API is currently experiencing temporary high demand (HTTP 503). Please retry in a few moments.")
+        elif last_resp.status_code != 200:
+            clean_text = sanitize_error_text(last_resp.text[:200])
+            raise LLMAPIError(f"Gemini API returned HTTP {last_resp.status_code}: {clean_text}")
 
         try:
-            data = resp.json()
+            data = last_resp.json()
             candidates = data.get("candidates", [])
             if not candidates:
                 return "The model did not return any candidates."

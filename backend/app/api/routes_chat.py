@@ -104,9 +104,14 @@ async def ask_question(
         )
     except LLMAPIError as e:
         logger.error(f"LLM API provider error: {e}")
+        err_text = str(e)
+        if "503" in err_text or "high demand" in err_text.lower():
+            detail_msg = "The AI model is experiencing temporary high demand (HTTP 503). Please retry in a few moments."
+        else:
+            detail_msg = f"External LLM provider returned an error: {err_text[:120]}"
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="External LLM provider returned an error.",
+            detail=detail_msg,
         )
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {e}", exc_info=True)

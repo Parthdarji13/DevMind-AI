@@ -216,6 +216,21 @@ class HybridRetriever:
                 fused_map[cid]["vector_score"] = res.score
                 fused_map[cid]["in_vector"] = True
 
+        # 3b. Query-aware file path and symbol relevance boost
+        # If user query references a file path, filename, or symbol name, boost its fused score
+        # so exact lexical matches aren't drowned out by generic semantic vector noise.
+        query_lower = query.lower()
+        for cid, info in fused_map.items():
+            c = info["chunk"]
+            c_path_lower = c.file_path.lower()
+            file_name = c_path_lower.split("/")[-1]
+            if c_path_lower in query_lower:
+                info["rrf_score"] += 0.05
+            elif len(file_name) > 3 and file_name in query_lower:
+                info["rrf_score"] += 0.03
+            if c.symbol_name and len(c.symbol_name) > 2 and c.symbol_name.lower() in query_lower:
+                info["rrf_score"] += 0.02
+
         # 4. Sort unique items by fused RRF score descending
         ranked_candidates = sorted(
             fused_map.items(),

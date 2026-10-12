@@ -28,12 +28,12 @@ export const MetricsTiles: React.FC<MetricsTilesProps> = ({ metrics }) => {
       highlight: true,
     },
     {
-      label: "Skipped Files",
+      label: "Non-Code Excluded",
       value: metrics.skipped_files,
       icon: FileX,
       color: "text-[#636A74]",
       bg: "bg-[#FAF9F6]",
-      subtext: "Dependencies, builds & secrets",
+      subtext: "Packages, media & temp caches",
     },
     {
       label: "Failed to Parse",
