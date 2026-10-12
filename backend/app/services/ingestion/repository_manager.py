@@ -45,6 +45,7 @@ class RepositoryManager:
         name: str,
         source_type: SourceType,
         stats: Optional[RepositoryStats] = None,
+        owner_id: Optional[str] = None,
     ) -> RepositorySummary:
         """Initializes a new isolated repository entry with full progress tracking."""
         repo_id = str(uuid.uuid4())
@@ -63,10 +64,12 @@ class RepositoryManager:
             created_at=created_at,
             stats=stats or RepositoryStats(),
             progress=initial_progress,
+            owner_id=owner_id,
         )
         self._repositories[repo_id] = repo
         self.save_metadata(repo)
         return repo
+
 
     def get_repo_dir(self, repo_id: str) -> Path:
         """Returns the isolated extraction directory for repo_id."""
@@ -120,8 +123,14 @@ class RepositoryManager:
     def get_repository(self, repo_id: str) -> Optional[RepositorySummary]:
         return self._repositories.get(repo_id)
 
-    def list_repositories(self) -> list[RepositorySummary]:
-        return list(self._repositories.values())
+    def list_repositories(self, owner_id: Optional[str] = None) -> list[RepositorySummary]:
+        if not owner_id:
+            return list(self._repositories.values())
+        return [
+            r for r in self._repositories.values()
+            if r.owner_id == owner_id or r.owner_id is None
+        ]
+
 
     def cleanup_repository(self, repo_id: str) -> None:
         """Safely cleans up temporary and data directories for a repository."""

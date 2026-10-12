@@ -89,6 +89,7 @@ class IngestResponse(BaseModel):
     stats: RepositoryStats
     message: str
     error: Optional[str] = None
+    owner_id: Optional[str] = None
 
 
 class RepositorySummary(BaseModel):
@@ -99,6 +100,8 @@ class RepositorySummary(BaseModel):
     created_at: str
     stats: RepositoryStats
     progress: Optional[IngestionProgress] = None
+    owner_id: Optional[str] = None
+
 
 
 class IngestGitRequest(BaseModel):

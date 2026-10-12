@@ -103,3 +103,42 @@ export interface SuggestedQuestionsResponse {
   total_chunks_analyzed: number;
   languages_detected: string[];
 }
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string | null;
+  is_guest: boolean;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface RepositoryStats {
+  discovered_files: number;
+  included_files: number;
+  skipped_files: number;
+  failed_files: number;
+  indexed_files: number;
+  skipped_breakdown?: Record<string, number>;
+  languages?: Record<string, number>;
+  total_size_bytes?: number;
+  total_lines?: number;
+  duration_seconds?: number;
+}
+
+export interface RepositorySummary {
+  repo_id: string;
+  name: string;
+  source_type: SourceType;
+  status: RepositoryStatus;
+  created_at: string;
+  stats: RepositoryStats;
+  progress?: IngestionProgress | null;
+  owner_id?: string | null;
+}
+

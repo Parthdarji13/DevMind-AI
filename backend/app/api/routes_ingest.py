@@ -3,8 +3,10 @@ Ingestion API routes for ZIP uploads and repository management.
 Ref: PRD Section 6 (FR-01, FR-08), Section 17.4; Step 9 of execution guide.
 """
 from pathlib import Path
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile, status
+import logging
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from ..core.config import get_settings
+from ..services.auth.jwt_handler import UserContext, get_current_user
 from ..models.repository import (
     IngestResponse,
     IngestGitRequest,
@@ -14,6 +16,9 @@ from ..models.repository import (
     SourceType,
     IngestionProgress,
 )
+
+logger = logging.getLogger(__name__)
+
 from ..services.ingestion.zip_validator import (
     safe_extract_zip,
     MalformedZipError,
@@ -49,7 +54,9 @@ settings = get_settings()
 async def upload_zip_repository(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    user: UserContext = Depends(get_current_user),
 ):
+
     # 1. Filename validation
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(
@@ -102,8 +109,10 @@ async def upload_zip_repository(
     repo = repo_manager.create_repository(
         name=file.filename,
         source_type=SourceType.ZIP,
+        owner_id=user.id,
     )
     extract_dir = repo_manager.get_repo_dir(repo.repo_id)
+
 
     # 5. Safe extraction with security protections
     try:
@@ -213,6 +222,7 @@ async def upload_zip_repository(
         repo_name=file.filename,
         stats=stats,
         message="Repository uploaded, extracted, and queued for background indexing.",
+        owner_id=user.id,
     )
 
 
@@ -225,6 +235,7 @@ async def upload_zip_repository(
 async def ingest_git_repository(
     req: IngestGitRequest,
     background_tasks: BackgroundTasks,
+    user: UserContext = Depends(get_current_user),
 ):
     # 1. Validate URL & SSRF
     try:
@@ -239,7 +250,9 @@ async def ingest_git_repository(
     repo = repo_manager.create_repository(
         name=validation.repo_name,
         source_type=SourceType.GIT,
+        owner_id=user.id,
     )
+
     target_dir = repo_manager.get_repo_dir(repo.repo_id)
 
     # 3. Clone and filter with controlled timeout & limits
@@ -321,6 +334,7 @@ async def ingest_git_repository(
         repo_name=validation.repo_name,
         stats=stats,
         message="Public Git repository cloned, filtered, and queued for background indexing.",
+        owner_id=user.id,
     )
 
 
@@ -380,14 +394,23 @@ def get_repository_status(repo_id: str):
 @router.get(
     "/list",
     response_model=list[RepositorySummary],
-    summary="List all indexed repositories (Local workspace instances only)",
+    summary="List all indexed repositories (Scoped by user or local instance)",
 )
-def list_repositories(request: Request):
-    # Protect privacy: restrict listing to local loopback workspace instances
+def list_repositories(
+    request: Request,
+    user: UserContext = Depends(get_current_user),
+):
+    # Enforce per-user privacy isolation: authenticated users only see their repositories
+    if user and user.id and not user.is_guest:
+        return repo_manager.list_repositories(owner_id=user.id)
+
+    # For local testing or guests: allow local workspace instances
     client_host = request.client.host if request.client else "127.0.0.1"
-    if client_host not in ("127.0.0.1", "localhost", "::1", "testclient"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Repository listing is restricted to local workspace instances.",
-        )
-    return repo_manager.list_repositories()
+    if client_host in ("127.0.0.1", "localhost", "::1", "testclient"):
+        return repo_manager.list_repositories(owner_id=user.id if user else None)
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Repository listing requires authentication.",
+    )
+

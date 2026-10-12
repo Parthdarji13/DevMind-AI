@@ -1,16 +1,28 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Terminal, WifiOff } from "lucide-react";
+import { Terminal, WifiOff, FolderGit2, User as UserIcon } from "lucide-react";
 import { checkBackendHealth } from "@/lib/api";
+
 import { BackendHealth } from "@/lib/types";
+import { useAuth } from "@/lib/auth";
 
 interface HeaderProps {
   currentStep?: 1 | 2 | 3;
+  onOpenDrawer?: () => void;
+  onOpenAuth?: () => void;
+  repoCount?: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentStep = 1 }) => {
+export const Header: React.FC<HeaderProps> = ({
+  currentStep = 1,
+  onOpenDrawer,
+  onOpenAuth,
+  repoCount,
+}) => {
   const [health, setHealth] = useState<BackendHealth | null>(null);
+  const { user, isAuthenticated } = useAuth();
+
 
   useEffect(() => {
     let mounted = true;
@@ -96,11 +108,52 @@ export const Header: React.FC<HeaderProps> = ({ currentStep = 1 }) => {
           </div>
         </div>
 
-        {/* Backend Status Badge */}
-        <div className="flex items-center gap-2">
+        {/* Actions & Status */}
+        <div className="flex items-center gap-2.5">
+          {/* My Repositories Drawer Trigger */}
+          {onOpenDrawer && (
+            <button
+              onClick={onOpenDrawer}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D0CFC8] bg-white hover:bg-[#FAF9F6] text-[#1C2024] text-xs font-semibold transition-all shadow-sm active:scale-95 group"
+            >
+              <FolderGit2 className="w-3.5 h-3.5 text-[#0B6E5F]" />
+              <span>Repositories</span>
+              {typeof repoCount === "number" && repoCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-[#E6F4F1] text-[#0B6E5F] text-[10px] flex items-center justify-center font-bold">
+                  {repoCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* User Profile / Sign In */}
+          {isAuthenticated && user ? (
+            <button
+              onClick={onOpenDrawer}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#D0CFC8] bg-white hover:bg-[#FAF9F6] text-xs font-medium text-[#1C2024] transition-all"
+              title={`${user.name} (${user.email})`}
+            >
+              <div className="w-5 h-5 rounded-full bg-[#0B6E5F] text-white text-[10px] font-bold flex items-center justify-center">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <span className="hidden sm:inline max-w-[80px] truncate">{user.name.split(" ")[0]}</span>
+            </button>
+          ) : (
+            onOpenAuth && (
+              <button
+                onClick={onOpenAuth}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1C2024] hover:bg-[#2C3136] text-white text-xs font-medium transition-all shadow-sm"
+              >
+                <UserIcon className="w-3.5 h-3.5" />
+                <span>Sign In</span>
+              </button>
+            )
+          )}
+
+          {/* Backend Status Badge */}
           {health?.status === "ok" ? (
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-200"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-200"
               title={`Backend online on port 8000 (LLM: ${health.llm_provider}, Embeddings: ${health.embedding_provider})`}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -108,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({ currentStep = 1 }) => {
             </div>
           ) : (
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200"
               title={health?.message || "Checking backend connection..."}
             >
               <WifiOff className="w-3.5 h-3.5 text-amber-600" />
@@ -116,6 +169,7 @@ export const Header: React.FC<HeaderProps> = ({ currentStep = 1 }) => {
             </div>
           )}
         </div>
+
       </div>
     </header>
   );

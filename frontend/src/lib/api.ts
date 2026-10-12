@@ -9,7 +9,9 @@ import {
   ChatRequest,
   ChatResponse,
   SuggestedQuestionsResponse,
+  RepositorySummary,
 } from "./types";
+import { getStoredToken } from "./auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -19,6 +21,15 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+function getAuthHeaders(): Record<string, string> {
+  const token = getStoredToken();
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
+
 
 /**
  * Checks connection and configuration of backend service.
@@ -88,6 +99,9 @@ export async function uploadZipRepository(file: File): Promise<IngestResponse> {
   try {
     const res = await fetch(`${API_BASE}/api/ingest/zip`, {
       method: "POST",
+      headers: {
+        ...getAuthHeaders(),
+      },
       body: formData,
     });
 
@@ -134,9 +148,11 @@ export async function importGitRepository(url: string): Promise<IngestResponse> 
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({ url: cleanUrl }),
     });
+
 
     if (!res.ok) {
       let errorDetail = "Git repository import failed.";
@@ -207,6 +223,7 @@ export async function askChatQuestion(request: ChatRequest): Promise<ChatRespons
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...getAuthHeaders(),
       },
       body: JSON.stringify(request),
     });
@@ -238,6 +255,9 @@ export async function getSuggestedQuestions(repoId: string): Promise<SuggestedQu
   try {
     const res = await fetch(`${API_BASE}/api/chat/suggested-questions/${encodeURIComponent(repoId)}`, {
       method: "GET",
+      headers: {
+        ...getAuthHeaders(),
+      },
       cache: "no-store",
     });
 
@@ -257,3 +277,87 @@ export async function getSuggestedQuestions(repoId: string): Promise<SuggestedQu
     throw new ApiError(0, msg);
   }
 }
+
+/**
+ * Lists repositories owned by the current authenticated user or session.
+ */
+export async function fetchUserRepositories(): Promise<RepositorySummary[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/repositories`, {
+      method: "GET",
+      headers: {
+        ...getAuthHeaders(),
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      throw new ApiError(res.status, `Failed to fetch repositories (${res.status})`);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
+/**
+ * Deletes a repository, its disk source files, BM25 indices, and vector embeddings.
+ */
+export async function deleteRepository(repoId: string): Promise<{ status: string; message: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/repositories/${encodeURIComponent(repoId)}`, {
+      method: "DELETE",
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
+
+    if (!res.ok) {
+      let errorDetail = "Failed to delete repository.";
+      try {
+        const errJson = await res.json();
+        errorDetail = errJson.detail || errorDetail;
+      } catch {}
+      throw new ApiError(res.status, errorDetail);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
+/**
+ * Triggers on-demand re-indexing for an ingested repository.
+ */
+export async function reindexRepository(repoId: string): Promise<{ status: string; message: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/repositories/${encodeURIComponent(repoId)}/reindex`, {
+      method: "POST",
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
+
+    if (!res.ok) {
+      let errorDetail = "Failed to re-index repository.";
+      try {
+        const errJson = await res.json();
+        errorDetail = errJson.detail || errorDetail;
+      } catch {}
+      throw new ApiError(res.status, errorDetail);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+

@@ -78,6 +78,11 @@ class Settings:
     embedding_provider: str = field(default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "local").lower())
     embedding_model: str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2"))
 
+    # Auth Settings
+    jwt_secret: str = field(default_factory=lambda: os.getenv("JWT_SECRET", "devmind_ai_super_secret_jwt_key_2026"))
+    google_client_id: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_ID", ""))
+
+
     def validate_llm_configuration(self) -> tuple[bool, str]:
         """Validates that credentials exist for active LLM provider, or returns informative error."""
         if self.llm_provider == "mock":
