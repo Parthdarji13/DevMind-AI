@@ -25,6 +25,7 @@ from ..services.llm.qa_service import QAService
 from ..services.retrieval.vector import RepositoryNotIndexedError
 from ..services.auth.jwt_handler import UserContext, get_current_user
 from ..services.auth.access_control import require_repo_access
+from ..services.db.mongo import MongoStorage, is_mongo_available
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,23 @@ async def ask_question(
     # 3. Process question through QA service
     try:
         response = qa_service.answer_question(request)
+
+        # Record completed chat turn in MongoDB if available
+        if is_mongo_available():
+            try:
+                MongoStorage.record_chat_turn(
+                    repo_id=repo_id,
+                    session_id=response.session_id or request.session_id or "default",
+                    user_message=request.question,
+                    assistant_message=response.answer,
+                    citations=[c.model_dump() for c in response.citations],
+                    user_id=user.id if user else None,
+                    inference_detected=response.inference_detected,
+                    abstained=response.abstained,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record chat turn in MongoDB: {e}")
+
         return response
     except RepositoryNotIndexedError:
         raise HTTPException(
@@ -158,3 +176,21 @@ async def get_suggested_questions(
 
     suggester = SuggestionService()
     return suggester.generate_suggestions(repo_id_clean)
+
+
+@router.get(
+    "/history/{repo_id}",
+    summary="Get persistent chat history for a repository from MongoDB",
+)
+def get_chat_history(
+    repo_id: str,
+    session_id: Optional[str] = None,
+    user: UserContext = Depends(get_current_user),
+):
+    """Retrieves recorded chat turns for a repository from MongoDB if available."""
+    repo_id_clean = repo_id.strip()
+    require_repo_access(repo_id_clean, user)
+    if is_mongo_available():
+        return MongoStorage.get_chat_history(repo_id_clean, session_id)
+    return []
+

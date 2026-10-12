@@ -238,6 +238,44 @@ const FormattedBlocks: React.FC<FormattedBlocksProps> = ({
               const lTrim = l.trim();
               if (!lTrim) return null;
 
+              // Headings inside mixed block (#, ##, ###, ####)
+              if (/^#{1,4}\s/.test(lTrim)) {
+                const match = lTrim.match(/^(#{1,4})\s+(.*)$/);
+                if (match) {
+                  const level = match[1].length;
+                  const headingText = match[2];
+
+                  if (level === 1 || level === 2) {
+                    return (
+                      <h3
+                        key={lIdx}
+                        className="text-sm font-bold text-[#1C2024] pt-2.5 pb-1 border-b border-[#EAE8E2] flex items-center gap-2"
+                      >
+                        <InlineFormatter
+                          text={headingText}
+                          citations={citations}
+                          onCitationClick={onCitationClick}
+                        />
+                      </h3>
+                    );
+                  }
+
+                  return (
+                    <h4
+                      key={lIdx}
+                      className="text-xs font-bold uppercase tracking-wider text-[#0B6E5F] pt-2 pb-0.5 flex items-center gap-1.5"
+                    >
+                      <span className="w-1.5 h-3 bg-[#0B6E5F] rounded-full inline-block" />
+                      <InlineFormatter
+                        text={headingText}
+                        citations={citations}
+                        onCitationClick={onCitationClick}
+                      />
+                    </h4>
+                  );
+                }
+              }
+
               if (/^[-*•]\s+/.test(lTrim)) {
                 return (
                   <div key={lIdx} className="flex items-start gap-2.5 pl-1">

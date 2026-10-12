@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncExternalStore } from "react";
 import { User, AuthResponse } from "./types";
 
 const TOKEN_KEY = "devmind_auth_token";
 const USER_KEY = "devmind_auth_user";
 const AUTH_CHANGE_EVENT = "devmind_auth_changed";
+
+let cachedUserRaw: string | null = null;
+let cachedUser: User | null = null;
 
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -15,18 +18,32 @@ export function getStoredToken(): string | null {
 export function getStoredUser(): User | null {
   if (typeof window === "undefined") return null;
   const raw = localStorage.getItem(USER_KEY);
-  if (!raw) return null;
+  if (!raw) {
+    cachedUserRaw = null;
+    cachedUser = null;
+    return null;
+  }
+  if (raw === cachedUserRaw) {
+    return cachedUser;
+  }
   try {
-    return JSON.parse(raw) as User;
+    cachedUser = JSON.parse(raw) as User;
+    cachedUserRaw = raw;
+    return cachedUser;
   } catch {
+    cachedUser = null;
+    cachedUserRaw = null;
     return null;
   }
 }
 
 export function setAuth(token: string, user: User) {
   if (typeof window === "undefined") return;
+  const raw = JSON.stringify(user);
   localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  localStorage.setItem(USER_KEY, raw);
+  cachedUser = user;
+  cachedUserRaw = raw;
   window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
 }
 
@@ -34,6 +51,8 @@ export function clearAuth() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  cachedUser = null;
+  cachedUserRaw = null;
   window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
 }
 
@@ -102,15 +121,17 @@ export async function signInWithEmail(email: string, password: string): Promise<
   return data.user;
 }
 
-export async function loginWithGoogle(email?: string, name?: string): Promise<User> {
+export async function loginWithGoogle(credential: string): Promise<User> {
+  const cleanCredential = (credential || "").trim();
+  if (!cleanCredential) {
+    throw new Error("Google credential token is required.");
+  }
+
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
   const res = await fetch(`${backendUrl}/api/auth/google`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: email || "developer@gmail.com",
-      name: name || "Google Developer",
-    }),
+    body: JSON.stringify({ credential: cleanCredential }),
   });
 
   if (!res.ok) {
@@ -130,31 +151,32 @@ export async function loginWithGoogle(email?: string, name?: string): Promise<Us
 }
 
 
+function subscribeAuth(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(AUTH_CHANGE_EVENT, callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    window.removeEventListener(AUTH_CHANGE_EVENT, callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+
+const getServerSnapshotNull = () => null;
+
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(() => getStoredUser());
-  const [token, setToken] = useState<string | null>(() => getStoredToken());
-
-
-  useEffect(() => {
-    // Listen for auth state changes
-    const handler = () => {
-      setToken(getStoredToken());
-      setUser(getStoredUser());
-    };
-
-    window.addEventListener(AUTH_CHANGE_EVENT, handler);
-    window.addEventListener("storage", handler);
-    return () => {
-      window.removeEventListener(AUTH_CHANGE_EVENT, handler);
-      window.removeEventListener("storage", handler);
-    };
-  }, []);
-
+  const user = useSyncExternalStore(
+    subscribeAuth,
+    getStoredUser,
+    getServerSnapshotNull
+  );
+  const token = useSyncExternalStore(
+    subscribeAuth,
+    getStoredToken,
+    getServerSnapshotNull
+  );
 
   const logout = () => {
     clearAuth();
-    setUser(null);
-    setToken(null);
   };
 
   return {
@@ -164,5 +186,4 @@ export function useAuth() {
     isAuthenticated: Boolean(user),
     logout,
   };
-
 }

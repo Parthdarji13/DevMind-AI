@@ -95,6 +95,10 @@ class Settings:
     jwt_secret: str = field(default_factory=_get_jwt_secret)
     google_client_id: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_ID", ""))
 
+    # Database Settings
+    mongodb_uri: str = field(default_factory=lambda: os.getenv("MONGODB_URI", "").strip())
+    mongodb_db_name: str = field(default_factory=lambda: os.getenv("MONGODB_DB_NAME", "devmind_ai").strip())
+
 
 
     def validate_llm_configuration(self) -> tuple[bool, str]:

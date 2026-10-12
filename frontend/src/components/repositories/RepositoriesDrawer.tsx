@@ -51,6 +51,7 @@ export const RepositoriesDrawer: React.FC<RepositoriesDrawerProps> = ({
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const loadRepositories = () => {
+    if (!isAuthenticated) return;
     setIsLoading(true);
     setError(null);
     fetchUserRepositories()
@@ -67,26 +68,29 @@ export const RepositoriesDrawer: React.FC<RepositoriesDrawerProps> = ({
 
   useEffect(() => {
     let active = true;
-    if (isOpen) {
+    if (isOpen && isAuthenticated) {
       fetchUserRepositories()
         .then((data) => {
           if (active) {
             setRepositories(data);
+            setIsLoading(false);
           }
         })
         .catch((err: unknown) => {
           if (active) {
             setError(err instanceof Error ? err.message : "Failed to load repositories");
+            setIsLoading(false);
           }
         });
     }
     return () => {
       active = false;
     };
-  }, [isOpen, user]);
+  }, [isOpen, isAuthenticated, user]);
 
 
   const filteredRepos = useMemo(() => {
+    if (!isAuthenticated) return [];
     if (!searchQuery.trim()) return repositories;
     const q = searchQuery.toLowerCase();
     return repositories.filter(
@@ -95,7 +99,7 @@ export const RepositoriesDrawer: React.FC<RepositoriesDrawerProps> = ({
         r.source_type.toLowerCase().includes(q) ||
         r.status.toLowerCase().includes(q)
     );
-  }, [repositories, searchQuery]);
+  }, [repositories, searchQuery, isAuthenticated]);
 
   const handleOpenChat = (repo: RepositorySummary) => {
     const ingestResp: IngestResponse = {
@@ -250,7 +254,34 @@ export const RepositoriesDrawer: React.FC<RepositoriesDrawerProps> = ({
             </div>
           )}
 
-          {!isLoading && error && (
+          {/* Unauthenticated View */}
+          {!isLoading && !isAuthenticated && (
+            <div className="text-center py-12 px-4 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#0B6E5F]/10 text-[#0B6E5F] mx-auto flex items-center justify-center">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-sm text-[#1C2024]">
+                  Sign in to view your repositories
+                </h4>
+                <p className="text-xs text-[#636A74] mt-1 max-w-xs mx-auto">
+                  Repositories are isolated to your authenticated account or guest developer session.
+                </p>
+              </div>
+              <div className="pt-2">
+                <button
+                  onClick={() => {
+                    onOpenAuth();
+                  }}
+                  className="px-4 py-2 bg-[#0B6E5F] text-white rounded-xl text-xs font-semibold hover:bg-[#09584C] transition-all shadow-sm"
+                >
+                  Sign In / Create Account
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!isLoading && isAuthenticated && error && (
             <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 space-y-2">
               <div className="font-semibold flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4" />
@@ -266,7 +297,7 @@ export const RepositoriesDrawer: React.FC<RepositoriesDrawerProps> = ({
             </div>
           )}
 
-          {!isLoading && !error && filteredRepos.length === 0 && (
+          {!isLoading && isAuthenticated && !error && filteredRepos.length === 0 && (
             <div className="text-center py-12 px-4 space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-[#F0EFEA] text-[#8C877D] mx-auto flex items-center justify-center">
                 <FileCode className="w-6 h-6" />

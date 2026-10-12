@@ -17,9 +17,13 @@ from ...models.repository import (
     RepositorySummary,
     IngestionProgress,
 )
+import logging
 from .progress_tracker import ProgressTracker
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+from ..db.mongo import MongoStorage, is_mongo_available
 
 
 class RepositoryManager:
@@ -30,13 +34,30 @@ class RepositoryManager:
         self._load_persisted_repositories()
 
     def _load_persisted_repositories(self) -> None:
-        """Loads repository metadata from disk if available."""
+        """Loads repository metadata from MongoDB or disk if available."""
         settings.ensure_storage_dirs()
+
+        # 1. Load from MongoDB if available
+        if is_mongo_available():
+            try:
+                mongo_repos = MongoStorage.list_repositories()
+                for item in mongo_repos:
+                    repo = RepositorySummary(**item)
+                    self._repositories[repo.repo_id] = repo
+                if mongo_repos:
+                    logger.info(f"Loaded {len(mongo_repos)} repository records from MongoDB.")
+            except Exception as e:
+                logger.warning(f"Error loading repositories from MongoDB: {e}")
+
+        # 2. Also load/sync from local disk metadata files
         for meta_file in settings.data_dir.glob("*/metadata.json"):
             try:
                 data = json.loads(meta_file.read_text(encoding="utf-8"))
                 repo = RepositorySummary(**data)
-                self._repositories[repo.repo_id] = repo
+                if repo.repo_id not in self._repositories:
+                    self._repositories[repo.repo_id] = repo
+                    if is_mongo_available():
+                        MongoStorage.save_repository(repo.model_dump())
             except Exception:
                 continue
 
@@ -85,8 +106,13 @@ class RepositoryManager:
         return repo_data_dir / "metadata.json"
 
     def save_metadata(self, repo: RepositorySummary) -> None:
-        """Persists repository metadata to disk."""
+        """Persists repository metadata to disk and MongoDB."""
         self._repositories[repo.repo_id] = repo
+        if is_mongo_available():
+            try:
+                MongoStorage.save_repository(repo.model_dump())
+            except Exception as e:
+                logger.warning(f"Failed to sync repository to MongoDB: {e}")
         meta_path = self.get_metadata_path(repo.repo_id)
         meta_path.write_text(repo.model_dump_json(indent=2), encoding="utf-8")
 
@@ -133,7 +159,12 @@ class RepositoryManager:
 
 
     def cleanup_repository(self, repo_id: str) -> None:
-        """Safely cleans up temporary and data directories for a repository."""
+        """Safely cleans up temporary and data directories and MongoDB record for a repository."""
+        if is_mongo_available():
+            try:
+                MongoStorage.delete_repository(repo_id)
+            except Exception as e:
+                logger.warning(f"Failed to delete repository from MongoDB: {e}")
         # 1. Temp extraction dir
         temp_dir = self.get_repo_dir(repo_id)
         if temp_dir.exists():

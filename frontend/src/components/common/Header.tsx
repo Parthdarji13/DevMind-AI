@@ -23,7 +23,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [health, setHealth] = useState<BackendHealth | null>(null);
   const { user, isAuthenticated } = useAuth();
 
-
   useEffect(() => {
     let mounted = true;
     const fetchHealth = async () => {

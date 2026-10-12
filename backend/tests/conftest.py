@@ -24,7 +24,7 @@ def auto_auth_for_legacy_tests(request):
     Leaves security attack and auth verification tests completely un-mocked.
     """
     node_id = request.node.nodeid.lower()
-    if "security" in node_id or "test_auth" in node_id:
+    if "security" in node_id or "auth" in node_id:
         yield
         return
 

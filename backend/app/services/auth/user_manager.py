@@ -56,6 +56,9 @@ def verify_password(password: str, hashed_str: str) -> bool:
         return False
 
 
+from ..db.mongo import MongoStorage, is_mongo_available
+
+
 class UserManager:
     def __init__(self):
         self._users: dict[str, UserRecord] = {}  # keyed by user_id
@@ -68,20 +71,46 @@ class UserManager:
         return settings.data_dir / "users.json"
 
     def _load_users(self) -> None:
+        # 1. Load from MongoDB if available
+        if is_mongo_available():
+            try:
+                mongo_users = MongoStorage.list_all_users()
+                for item in mongo_users:
+                    record = UserRecord(**item)
+                    self._users[record.id] = record
+                    self._email_index[record.email.lower()] = record.id
+                if mongo_users:
+                    logger.info(f"Loaded {len(mongo_users)} user account(s) from MongoDB.")
+            except Exception as e:
+                logger.warning(f"Error loading users from MongoDB: {e}")
+
+        # 2. Also load/sync from local users.json file
         path = self._get_storage_path()
         if not path.exists():
             return
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             for item in data:
-                record = UserRecord(**item)
-                self._users[record.id] = record
-                self._email_index[record.email.lower()] = record.id
+                if item["id"] not in self._users:
+                    record = UserRecord(**item)
+                    self._users[record.id] = record
+                    self._email_index[record.email.lower()] = record.id
+                    if is_mongo_available():
+                        MongoStorage.save_user(record.model_dump())
         except Exception as e:
             logger.error(f"Error loading users from {path}: {e}")
 
     def _save_users(self) -> None:
-        """Atomic persistence using temporary file and atomic replace to prevent corruption."""
+        """Atomic persistence using local file and MongoDB sync."""
+        # 1. Sync to MongoDB
+        if is_mongo_available():
+            for u in self._users.values():
+                try:
+                    MongoStorage.save_user(u.model_dump())
+                except Exception:
+                    pass
+
+        # 2. Atomic local write
         path = self._get_storage_path()
         tmp_path = path.with_suffix(".tmp")
         try:

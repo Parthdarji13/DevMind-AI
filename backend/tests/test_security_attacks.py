@@ -49,10 +49,13 @@ def test_attack_1_google_login_raw_email_body_rejected():
 # ---------------------------------------------------------------------------
 # ATTACK 2: Forged Google Token with Fake Signature
 # ---------------------------------------------------------------------------
-def test_attack_2_forged_google_token_with_fake_signature_rejected():
+def test_attack_2_forged_google_token_with_fake_signature_rejected(monkeypatch):
     """
     Attacker crafts a self-signed JWT claiming to be from Google with victim's email.
     """
+    from backend.app.api import routes_auth
+    monkeypatch.setattr(routes_auth.settings, "google_client_id", "target-client-id.apps.googleusercontent.com")
+
     fake_payload = {
         "iss": "https://accounts.google.com",
         "sub": "google_123456789",

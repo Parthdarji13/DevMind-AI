@@ -181,23 +181,44 @@ def login_as_guest():
 def login_with_google(req: GoogleAuthRequest):
     """
     Cryptographically verifies Google ID Token against Google's OAuth2 API.
+    Fails closed if GOOGLE_CLIENT_ID is not configured.
     Rejects forged tokens, unverified emails, and mismatched audience IDs.
     """
-    credential = req.credential.strip()
+    # 1. Fail closed if GOOGLE_CLIENT_ID is missing or placeholder
+    client_id = (settings.google_client_id or "").strip()
+    if not client_id or client_id.startswith("your_"):
+        logger.error("Google authentication rejected: GOOGLE_CLIENT_ID is not configured on the server.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google authentication is not configured on this server.",
+        )
+
+    # 2. Enforce non-empty credential token
+    credential = (req.credential or "").strip()
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Google ID token credential is required.",
         )
 
-    # 1. Cryptographically verify token with google-auth library and Google's tokeninfo API
+    # 3. Cryptographically verify token with google-auth library
     google_data = None
     try:
         from google.oauth2 import id_token
         from google.auth.transport import requests as google_requests
         request = google_requests.Request()
-        client_id = settings.google_client_id if (settings.google_client_id and not settings.google_client_id.startswith("your_")) else None
         google_data = id_token.verify_oauth2_token(credential, request, audience=client_id)
+    except ValueError as ve:
+        err_msg = str(ve).lower()
+        if "audience" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Google token audience does not match configured application client ID.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Google authentication failed: {str(ve)}",
+        )
     except Exception as g_err:
         try:
             with httpx.Client(timeout=10.0) as client:
@@ -219,22 +240,21 @@ def login_with_google(req: GoogleAuthRequest):
                 detail="Google authentication failed: Invalid or forged Google ID token.",
             )
 
-    # 2. Enforce email verification
+    # 4. Enforce audience match against configured Client ID
+    token_aud = google_data.get("aud")
+    if token_aud != client_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google token audience does not match configured application client ID.",
+        )
+
+    # 5. Enforce email verification
     email_verified = google_data.get("email_verified")
     if email_verified not in (True, "true"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Google account email is not verified.",
         )
-
-    # 3. Enforce audience if GOOGLE_CLIENT_ID is configured
-    if settings.google_client_id and not settings.google_client_id.startswith("your_"):
-        token_aud = google_data.get("aud")
-        if token_aud != settings.google_client_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Google token audience does not match configured application client ID.",
-            )
 
     email = google_data.get("email")
     if not email:

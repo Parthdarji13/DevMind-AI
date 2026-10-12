@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   X,
   Sparkles,
@@ -19,6 +19,37 @@ import {
   loginWithGoogle,
   loginAsGuest,
 } from "@/lib/auth";
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential?: string }) => void;
+            auto_select?: boolean;
+            cancel_on_tap_outside?: boolean;
+          }) => void;
+          prompt: (momentListener?: (notification: unknown) => void) => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: {
+              type?: "standard" | "icon";
+              theme?: "outline" | "filled_blue" | "filled_black";
+              size?: "large" | "medium" | "small";
+              text?: "signin_with" | "signup_with" | "continue_with" | "signin";
+              shape?: "rectangular" | "pill" | "circle" | "square";
+              logo_alignment?: "left" | "center";
+              width?: string | number;
+              locale?: string;
+            }
+          ) => void;
+        };
+      };
+    };
+  }
+}
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -41,7 +72,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  const googleBtnContainerRef = useRef<HTMLDivElement>(null);
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+  const isGoogleConfigured = Boolean(
+    googleClientId && !googleClientId.startsWith("your_")
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,19 +134,75 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleGoogleAuth = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      await loginWithGoogle();
-      if (onSuccess) onSuccess();
-      onClose();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Google login failed");
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!isOpen || !isGoogleConfigured) return;
+
+    let isSubscribed = true;
+
+    const setupGoogle = () => {
+      if (!isSubscribed) return;
+      if (typeof window === "undefined" || !window.google?.accounts?.id) return;
+
+      try {
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: async (response: { credential?: string }) => {
+            if (!response.credential) {
+              setError("Google sign-in did not return a valid credential token.");
+              return;
+            }
+            try {
+              setLoading(true);
+              setError(null);
+              await loginWithGoogle(response.credential);
+              if (onSuccess) onSuccess();
+              onClose();
+            } catch (err: unknown) {
+              setError(
+                err instanceof Error ? err.message : "Google authentication failed"
+              );
+            } finally {
+              setLoading(false);
+            }
+          },
+        });
+
+        if (googleBtnContainerRef.current) {
+          googleBtnContainerRef.current.innerHTML = "";
+          window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
+            type: "standard",
+            theme: "outline",
+            size: "large",
+            text: "continue_with",
+            shape: "rectangular",
+            logo_alignment: "left",
+            width: 175,
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to initialize Google Identity Services:", err);
+      }
+    };
+
+    if (window.google?.accounts?.id) {
+      setupGoogle();
+    } else {
+      const interval = setInterval(() => {
+        if (window.google?.accounts?.id) {
+          clearInterval(interval);
+          setupGoogle();
+        }
+      }, 250);
+      return () => {
+        isSubscribed = false;
+        clearInterval(interval);
+      };
     }
-  };
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [isOpen, isGoogleConfigured, googleClientId, onSuccess, onClose]);
 
   const handleGuestAuth = async () => {
     try {
@@ -126,6 +217,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setLoading(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -295,44 +388,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
 
           {/* Social / 1-Click Options (NO TOKEN PROMPTS!) */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleGoogleAuth}
-              disabled={loading}
-              className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl border border-[#D0CFC8] bg-white hover:bg-[#FAF9F6] text-[#1C2024] font-medium text-xs transition-all shadow-sm active:scale-[0.99] disabled:opacity-50"
-            >
-              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          {isGoogleConfigured ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="relative flex items-center justify-center min-h-[38px] rounded-xl overflow-hidden border border-[#D0CFC8] bg-white">
+                <div
+                  ref={googleBtnContainerRef}
+                  className="w-full flex items-center justify-center scale-95"
                 />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>Google</span>
-            </button>
-
+              </div>
+              <button
+                type="button"
+                onClick={handleGuestAuth}
+                disabled={loading}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#D0CFC8] bg-[#F7F6F3] hover:bg-[#F0EFEA] text-[#1C2024] font-medium text-xs transition-all shadow-sm active:scale-[0.99] disabled:opacity-50"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#0B6E5F]" />
+                <span>Guest Dev</span>
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
               onClick={handleGuestAuth}
               disabled={loading}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#D0CFC8] bg-[#F7F6F3] hover:bg-[#F0EFEA] text-[#1C2024] font-medium text-xs transition-all shadow-sm active:scale-[0.99] disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-[#D0CFC8] bg-[#F7F6F3] hover:bg-[#F0EFEA] text-[#1C2024] font-medium text-xs transition-all shadow-sm active:scale-[0.99] disabled:opacity-50"
             >
-              <Sparkles className="w-3.5 h-3.5 text-[#0B6E5F]" />
-              <span>Guest Dev</span>
+              <Sparkles className="w-4 h-4 text-[#0B6E5F]" />
+              <span>Continue as Guest Dev (1-Click Instant Access)</span>
             </button>
-          </div>
+          )}
 
           {/* Privacy Guarantee Note */}
           <div className="p-3 rounded-xl bg-[#FAF9F6] border border-[#EBE8E1] flex items-center gap-2 text-[11px] text-[#636A74]">

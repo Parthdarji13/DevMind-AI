@@ -180,6 +180,9 @@ export async function getIngestionProgress(repoId: string): Promise<IngestionPro
   try {
     const res = await fetch(`${API_BASE}/api/ingest/progress/${encodeURIComponent(repoId)}`, {
       method: "GET",
+      headers: {
+        ...getAuthHeaders(),
+      },
       cache: "no-store",
     });
 
@@ -202,6 +205,9 @@ export async function triggerIndexing(repoId: string): Promise<void> {
   try {
     const res = await fetch(`${API_BASE}/api/ingest/index/${encodeURIComponent(repoId)}`, {
       method: "POST",
+      headers: {
+        ...getAuthHeaders(),
+      },
     });
 
     if (!res.ok) {
