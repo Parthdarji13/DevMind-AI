@@ -28,6 +28,8 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = Field(default_factory=list, description="Prior conversation context")
     max_chunks: int = Field(default=8, ge=1, le=25, description="Maximum evidence chunks to retrieve")
     session_id: Optional[str] = Field(None, description="Optional conversation session ID")
+    user_name: Optional[str] = Field(None, description="Optional display name or username")
+
 
 
 class ChatResponse(BaseModel):
@@ -173,4 +175,28 @@ class QuizResponse(BaseModel):
     repo_id: str = Field(..., description="Repository identifier")
     questions: list[QuizQuestion] = Field(default_factory=list, description="Questions generated for this repo")
     total_questions: int = Field(default=0, description="Count of questions")
+
+
+# ==============================================================================
+# Feature 13: Dedicated Voice Conversation Mode
+# ==============================================================================
+
+class VoiceChatRequest(BaseModel):
+    """Payload for real-time conversational voice interaction with indexed codebase."""
+    repo_id: str = Field(..., description="Identifier of the indexed repository")
+    question: str = Field(..., min_length=1, max_length=2000, description="Spoken question from developer")
+    history: list[ChatMessage] = Field(default_factory=list, description="Prior conversational context turns")
+    session_id: Optional[str] = Field(None, description="Optional conversation session ID")
+    user_name: Optional[str] = Field(None, description="Optional display name or username")
+
+
+
+class VoiceChatResponse(BaseModel):
+    """Clean conversational voice answer synthesized for spoken audio TTS output."""
+    answer: str = Field(..., description="Clean, spoken conversational answer without markdown, asterisks, or citation brackets")
+    session_id: Optional[str] = Field(None, description="Conversation session ID")
+    cited_files: list[str] = Field(default_factory=list, description="Repository files referenced in the answer")
+    audio_base64: Optional[str] = Field(None, description="Base64 encoded lifelike MP3 speech audio")
+
+
 

@@ -267,3 +267,86 @@ def validate_citations_against_chunks(
             )
 
     return valid_citations
+
+
+# ==============================================================================
+# Feature 13: Voice Conversational Prompt & Speech Cleaning
+# ==============================================================================
+
+VOICE_SYSTEM_PROMPT = """You are DevMind Voice Assistant, speaking on a direct voice call with a developer colleague.
+Your response will be spoken aloud via text-to-speech through the user's speakers or headphones.
+
+CRITICAL VOICE CONVERSATION RULES:
+1. NATURAL SPOKEN WORDS ONLY: Speak naturally and warmly like a senior engineering teammate talking over audio.
+2. ABSOLUTELY ZERO MARKDOWN OR SYNTAX: NEVER include markdown headers (#), asterisks (** or *), bullet points (- or *), numbered lists (1.), backticks (`code`), code blocks (```), or citation brackets like [File: ... Lines: ...]. Text-to-speech reads those symbols out loud, which ruins the spoken audio.
+3. CONCISE & COMPLETE: Keep your response between 2 and 4 short, clear, complete sentences. Finish every sentence cleanly with a period. NEVER trail off with ellipses (...) or incomplete thoughts.
+4. CODE EXPLANATION: Never read raw code listings or syntax. Describe what the code does conceptually in plain language. Mention key components or file names naturally (for example: "in the auth routes" or "the ingestion pipeline").
+5. LANGUAGE & ACCURACY:
+   - If the user asks in Hindi or Hinglish, reply naturally in clear, fluent conversational Hinglish.
+   - If the user asks in English, reply in natural conversational English.
+   - If the codebase evidence does not contain the answer, say warmly in one complete sentence that you couldn't find that in the indexed files and ask what else you can check.
+"""
+
+
+def clean_for_speech(text: str) -> str:
+    """Removes any stray markdown, citation brackets, asterisks, or code fences before text-to-speech."""
+    # Remove citation tags like [File: ... Lines: ...] or [path:10-20]
+    t = re.sub(r"\[(?:File:\s*)?[^\]]+\]", "", text)
+    # Remove code blocks
+    t = re.sub(r"```[\s\S]*?```", "", t)
+    # Remove backticks
+    t = t.replace("`", "")
+    # Remove bold/italic asterisks
+    t = t.replace("**", "").replace("*", "")
+    # Remove markdown headers (#, ##) and list bullets (- , * , 1. )
+    t = re.sub(r"^[#\-\*\d\.\s]+\s", "", t, flags=re.MULTILINE)
+    # Remove double quotes or awkward characters
+    t = t.replace("###", "").replace("##", "").replace("#", "")
+    # Collapse multiple whitespaces/newlines
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def build_voice_prompt(
+    question: str,
+    chunks: list[Union[CodeChunk, SearchResult]],
+    history: Optional[list[ChatMessage]] = None,
+    repo_name: Optional[str] = None,
+    max_total_chars: Optional[int] = 8000,
+) -> tuple[str, str]:
+    """
+    Builds the (system_prompt, user_prompt) tuple specifically tailored for spoken audio voice dialogue.
+    """
+    evidence_text = format_chunk_context(chunks, max_total_chars=max_total_chars)
+
+    history_text = ""
+    if history:
+        history_lines: list[str] = []
+        for msg in history[-4:]:  # Bound history to last 4 turns for spoken dialogue
+            history_lines.append(f"{msg.role.upper()}: {msg.content}")
+        history_text = (
+            "--- RECENT SPOKEN DIALOGUE TURNS ---\n"
+            + "\n".join(history_lines)
+            + "\n------------------------------------\n\n"
+        )
+
+    repo_banner = f"REPOSITORY CONTEXT: {repo_name}\n" if repo_name else ""
+
+    from ..retrieval.multilingual import detect_language
+    lang = detect_language(question)
+    lang_directive = ""
+    if lang in ("hindi", "hinglish"):
+        lang_directive = "\n- The developer spoke in Hindi/Hinglish. Reply in friendly conversational Hinglish."
+
+    user_prompt = (
+        f"{repo_banner}"
+        f"{history_text}"
+        f"--- RELEVANT CODEBASE CONTEXT ---\n"
+        f"{evidence_text}\n"
+        f"--------------------------------\n\n"
+        f"DEVELOPER SPOKE:\n\"{question.strip()}\"\n\n"
+        f"Synthesize a direct 2-4 sentence spoken answer for text-to-speech. Remember: NO markdown, NO asterisks, NO bullet points, NO citation brackets.{lang_directive}"
+    )
+
+    return VOICE_SYSTEM_PROMPT, user_prompt
+

@@ -15,11 +15,13 @@ import {
 interface ChatInputProps {
   onSendMessage: (question: string) => void;
   isLoading: boolean;
+  onOpenVoiceCall?: () => void;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   isLoading,
+  onOpenVoiceCall,
 }) => {
   const [text, setText] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -316,6 +318,20 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </button>
           </div>
 
+          {/* Dedicated Voice Call Screen Button */}
+          {onOpenVoiceCall && (
+            <button
+              type="button"
+              onClick={onOpenVoiceCall}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-xl text-white bg-gradient-to-r from-[#0B6E5F] to-[#085247] hover:from-[#095b4e] hover:to-[#064239] transition-all cursor-pointer shadow-xs disabled:opacity-50"
+              title="Open Dedicated Hands-Free Voice Call"
+            >
+              <Radio className="w-3.5 h-3.5 text-white animate-pulse" />
+              <span className="hidden sm:inline">Voice Call</span>
+            </button>
+          )}
+
           {/* Voice Input Microphone Button */}
           {isSupported && (
             <button
@@ -330,7 +346,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               title={
                 isListening
                   ? "Stop listening"
-                  : `Voice Input (${voiceLang === "hi-IN" ? "Hindi/Hinglish" : "English"})`
+                  : `Voice Typing into box (${voiceLang === "hi-IN" ? "Hindi/Hinglish" : "English"})`
               }
             >
               {isListening ? (

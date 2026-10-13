@@ -19,6 +19,8 @@ from ..models.chat import (
     OnboardingDocResponse,
     ArchitectureMapResponse,
     QuizResponse,
+    VoiceChatRequest,
+    VoiceChatResponse,
 )
 from ..services.indexing.storage import PersistentIndexStore
 from ..services.llm.advanced_features import AdvancedFeaturesService
@@ -90,7 +92,7 @@ async def ask_question(
 
     # 3. Process question through QA service
     try:
-        response = qa_service.answer_question(request)
+        response = qa_service.answer_question(request, user=user)
 
         # Record completed chat turn in MongoDB if available
         if is_mongo_available():
@@ -245,7 +247,7 @@ async def chat_question_stream(
             detail=f"Repository '{repo_id}' has not been indexed yet or index is missing.",
         )
 
-    generator = qa_service.answer_question_stream(request, user_id=user.id if user else None)
+    generator = qa_service.answer_question_stream(request, user=user, user_id=user.id if user else None)
     return StreamingResponse(
         generator,
         media_type="text/event-stream",
@@ -335,6 +337,77 @@ def get_learning_quiz(
 ) -> QuizResponse:
     require_repo_access(repo_id, user)
     return service.generate_learning_quiz(repo_id)
+
+
+# ==============================================================================
+# Feature 13: Dedicated Spoken Voice Interaction Endpoint
+# ==============================================================================
+
+@router.post(
+    "/api/chat/voice",
+    response_model=VoiceChatResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Spoken conversational voice Q&A without markdown or citation brackets (Feature 13)",
+)
+async def ask_voice_question(
+    request: VoiceChatRequest,
+    user: UserContext = Depends(get_current_user),
+    qa_service: QAService = Depends(get_qa_service),
+) -> VoiceChatResponse:
+    q_stripped = request.question.strip()
+    if not q_stripped:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Question cannot be empty or whitespace.",
+        )
+    if len(q_stripped) > 2000:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Question exceeds maximum allowed length of 2000 characters.",
+        )
+
+    repo_id = request.repo_id.strip()
+    if not repo_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Repository ID must be specified.",
+        )
+
+    require_repo_access(repo_id, user)
+
+    store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
+    if not store.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repo_id}' has not been indexed yet or index is missing.",
+        )
+
+    try:
+        user_identifier = getattr(user, "id", None) or getattr(user, "user_id", None)
+        response = qa_service.answer_voice_question(request, user=user, user_id=user_identifier)
+        return response
+    except RepositoryNotIndexedError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repo_id}' is not indexed.",
+        )
+    except LLMRateLimitError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"LLM rate limit reached: {e}",
+        )
+    except LLMTimeoutError as e:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"LLM request timed out: {e}",
+        )
+    except Exception as e:
+        logger.error(f"Error answering voice question for repo '{repo_id}': {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Error generating voice response: {str(e)}",
+        )
+
 
 
 

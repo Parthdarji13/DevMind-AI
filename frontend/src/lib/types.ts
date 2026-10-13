@@ -69,6 +69,7 @@ export interface ChatRequest {
   history?: ChatMessage[];
   max_chunks?: number;
   session_id?: string | null;
+  user_name?: string | null;
 }
 
 export interface ChatResponse {
@@ -210,5 +211,21 @@ export interface QuizResponse {
   questions: QuizQuestion[];
   total_questions: number;
 }
+
+export interface VoiceChatRequest {
+  repo_id: string;
+  question: string;
+  history?: ChatMessage[];
+  session_id?: string | null;
+  user_name?: string | null;
+}
+
+export interface VoiceChatResponse {
+  answer: string;
+  session_id?: string | null;
+  cited_files: string[];
+  audio_base64?: string | null;
+}
+
 
 

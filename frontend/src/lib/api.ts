@@ -14,8 +14,10 @@ import {
   OnboardingDocResponse,
   ArchitectureMapResponse,
   QuizResponse,
+  VoiceChatRequest,
+  VoiceChatResponse,
 } from "./types";
-import { getStoredToken } from "./auth";
+import { getStoredToken, getStoredUser } from "./auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -229,13 +231,18 @@ export async function triggerIndexing(repoId: string): Promise<void> {
  */
 export async function askChatQuestion(request: ChatRequest): Promise<ChatResponse> {
   try {
+    const user = getStoredUser();
+    const payload: ChatRequest = {
+      ...request,
+      user_name: request.user_name || user?.name || user?.id || "Parth",
+    };
     const res = await fetch(`${API_BASE}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...getAuthHeaders(),
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -270,13 +277,18 @@ export async function askChatQuestionStream(
   }
 ): Promise<void> {
   try {
+    const user = getStoredUser();
+    const payload: ChatRequest = {
+      ...request,
+      user_name: request.user_name || user?.name || user?.id || "Parth",
+    };
     const res = await fetch(`${API_BASE}/api/chat/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...getAuthHeaders(),
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -605,5 +617,42 @@ export async function getLearningQuiz(repoId: string): Promise<QuizResponse> {
     throw new ApiError(0, msg);
   }
 }
+
+/**
+ * Ask a spoken conversational question for voice chat (Feature 13).
+ */
+export async function askVoiceQuestion(req: VoiceChatRequest): Promise<VoiceChatResponse> {
+  try {
+    const user = getStoredUser();
+    const payload: VoiceChatRequest = {
+      ...req,
+      user_name: req.user_name || user?.name || user?.id || "Parth",
+    };
+    const res = await fetch(`${API_BASE}/api/chat/voice`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      let errDetail = `Voice request failed (${res.status})`;
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errDetail;
+      } catch {}
+      throw new ApiError(res.status, errDetail);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
 
 

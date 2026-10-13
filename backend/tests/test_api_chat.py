@@ -300,3 +300,37 @@ def test_chat_feedback_endpoint(tmp_path: Path):
     data_down = resp_down.json()
     assert data_down["status"] == "success"
 
+
+def test_chat_voice_endpoint(tmp_path: Path):
+    """Verify POST /api/chat/voice returns clean conversational speech text without markdown."""
+    repo_id = "repo_voice_test"
+    _seed_test_repo(repo_id, tmp_path)
+    storage_mgr = IndexStorageManager(base_dir=tmp_path)
+    retrieval_mgr = HybridRetrievalManager(storage_manager=storage_mgr)
+
+    class VoiceMockLLM(MockLLMProvider):
+        def generate_response(self, system_prompt: str, user_prompt: str) -> str:
+            return "The authentication module handles user sessions using tokens. [File: services/auth.py, Lines: 10-25] It verifies passwords securely."
+
+    test_qa_service = QAService(
+        retrieval_manager=retrieval_mgr,
+        llm_provider=VoiceMockLLM(),
+    )
+    app.dependency_overrides[get_qa_service] = lambda: test_qa_service
+    try:
+        resp = client.post(
+            "/api/chat/voice",
+            json={"repo_id": repo_id, "question": "How does auth work?"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "answer" in data
+        assert "cited_files" in data
+        # Spoken answer should have citation tags and markdown stripped
+        assert "[File:" not in data["answer"]
+        assert "The authentication module handles user sessions" in data["answer"]
+        assert len(data["cited_files"]) > 0
+    finally:
+        app.dependency_overrides.clear()
+
+

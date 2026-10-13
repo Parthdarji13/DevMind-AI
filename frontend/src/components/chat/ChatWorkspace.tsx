@@ -11,9 +11,12 @@ import {
   Network,
   GraduationCap,
   Download,
+  Mic,
+  Radio,
 } from "lucide-react";
 import { IngestResponse, IngestionProgress, Citation, ChatMessage, SuggestedQuestion } from "@/lib/types";
 import { askChatQuestionStream, getIngestionProgress, getSuggestedQuestions, ApiError } from "@/lib/api";
+import { getStoredUser } from "@/lib/auth";
 import { ChatSidebar } from "./ChatSidebar";
 import { MessageItem, ChatMessageDisplay } from "./MessageItem";
 import { ChatInput } from "./ChatInput";
@@ -23,6 +26,7 @@ import { FlowTraceModal } from "./FlowTraceModal";
 import { OnboardingDocModal } from "./OnboardingDocModal";
 import { ArchitectureMapModal } from "./ArchitectureMapModal";
 import { LearningQuizModal } from "./LearningQuizModal";
+import { VoiceConversationModal } from "./VoiceConversationModal";
 
 interface ChatWorkspaceProps {
   repo: IngestResponse;
@@ -49,6 +53,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isArchMapOpen, setIsArchMapOpen] = useState(false);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
+  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
 
   // Suggested inquiries state (Step 29)
   const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
@@ -127,12 +132,14 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         content: m.content,
       }));
 
+      const currentUser = getStoredUser();
       await askChatQuestionStream(
         {
           repo_id: repo.repo_id,
           question: question,
           history: historyPayload,
           session_id: sessionId,
+          user_name: currentUser?.name || currentUser?.id || "Parth",
         },
         {
           onChunk: (token: string) => {
@@ -247,6 +254,34 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
     setIsDrawerOpen(true);
   };
 
+  const handleSyncVoiceTurn = (question: string, spokenAnswer: string, citedFiles: string[]) => {
+    const nowTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const userMsgId = `voice-user-${Date.now()}`;
+    const assistantMsgId = `voice-ast-${Date.now()}`;
+
+    const userMsg: ChatMessageDisplay = {
+      id: userMsgId,
+      role: "user",
+      content: `🎙️ ${question}`,
+      timestamp: nowTime,
+    };
+
+    const assistantMsg: ChatMessageDisplay = {
+      id: assistantMsgId,
+      role: "assistant",
+      content: spokenAnswer,
+      citations: citedFiles.map((file) => ({
+        file_path: file,
+        start_line: 1,
+        end_line: 1,
+        snippet: "Referenced during live voice call.",
+      })),
+      timestamp: nowTime,
+    };
+
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col lg:flex-row items-start gap-6 py-4">
       {/* Sidebar Overview */}
@@ -270,8 +305,18 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
             </div>
           </div>
 
-          {/* Action Bar: Flow Trace, Onboarding, Architecture Map, Quiz, Export */}
+          {/* Action Bar: Voice Call, Flow Trace, Onboarding, Architecture Map, Quiz, Export */}
           <div className="flex items-center flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsVoiceOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg text-white bg-gradient-to-r from-[#0B6E5F] to-[#085247] hover:from-[#095b4e] hover:to-[#064239] transition-all cursor-pointer shadow-xs"
+              title="Open hands-free real-time Voice Call"
+            >
+              <Radio className="w-3.5 h-3.5 text-white animate-pulse" />
+              <span>Voice Call</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsFlowTraceOpen(true)}
@@ -390,7 +435,11 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
 
         {/* Input Bar pinned to bottom */}
         <div className="p-4 border-t border-[#EAE8E2] bg-white">
-          <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+          <ChatInput
+            onSendMessage={handleSendMessage}
+            isLoading={isLoading}
+            onOpenVoiceCall={() => setIsVoiceOpen(true)}
+          />
         </div>
       </section>
 
@@ -434,6 +483,15 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         isOpen={isQuizOpen}
         onClose={() => setIsQuizOpen(false)}
         onSelectQuestion={(q) => handleSendMessage(q)}
+      />
+
+      {/* Feature 13: Dedicated Voice Conversation Modal */}
+      <VoiceConversationModal
+        repo={repo}
+        history={messages.map((m) => ({ role: m.role, content: m.content }))}
+        isOpen={isVoiceOpen}
+        onClose={() => setIsVoiceOpen(false)}
+        onSyncTurn={handleSyncVoiceTurn}
       />
     </div>
   );
