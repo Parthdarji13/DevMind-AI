@@ -84,14 +84,37 @@ class BaseLLMProvider(ABC):
 
 
 class GeminiLLMProvider(BaseLLMProvider):
-    """Google Gemini provider (gemini-3.5-flash / gemini-3.5-flash-lite)."""
+    """Google Gemini provider (gemini-3-flash-preview / gemini-3.5-flash)."""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-3.5-flash", timeout: float = 60.0):
+    def __init__(self, api_key: str, model_name: str = "gemini-3-flash-preview", timeout: float = 60.0):
         if not api_key or api_key.startswith("your_"):
             raise LLMConfigurationError("GEMINI_API_KEY is not configured or contains placeholder value.")
         self.api_key = api_key
         self.model_name = model_name
         self.timeout = timeout
+
+    def _get_candidate_models(self) -> list[str]:
+        candidates = []
+        if self.model_name and self.model_name not in (
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash",
+        ):
+            candidates.append(self.model_name)
+        candidates.extend([
+            "gemini-3-flash-preview",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+        ])
+        models = []
+        for m in candidates:
+            if m not in models:
+                models.append(m)
+        return models
 
     def generate_response(
         self,
@@ -113,23 +136,7 @@ class GeminiLLMProvider(BaseLLMProvider):
             },
         }
 
-        # Candidate models with automatic fallback: prioritize live gemini-3.5-flash
-        candidates = []
-        if self.model_name and self.model_name not in (
-            "gemini-flash-latest",
-            "gemini-flash-lite-latest",
-            "gemini-1.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.5-flash",
-        ):
-            candidates.append(self.model_name)
-        candidates.extend(["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest"])
-
-        models_to_try = []
-        for m in candidates:
-            if m not in models_to_try:
-                models_to_try.append(m)
-
+        models_to_try = self._get_candidate_models()
         last_resp = None
         last_error = None
 
@@ -211,46 +218,47 @@ class GeminiLLMProvider(BaseLLMProvider):
             },
         }
 
-        primary_model = (
-            "gemini-3.5-flash"
-            if self.model_name
-            in (
-                "gemini-flash-latest",
-                "gemini-flash-lite-latest",
-                "gemini-1.5-flash",
-                "gemini-2.0-flash",
-                "gemini-2.5-flash",
-            )
-            else self.model_name
-        )
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{primary_model}:streamGenerateContent?alt=sse"
+        models_to_try = self._get_candidate_models()
         streamed_any = False
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                with client.stream("POST", url, headers=headers, json=payload) as response:
-                    if response.status_code == 200:
-                        import json
-                        for line in response.iter_lines():
-                            line_str = line.strip()
-                            if line_str.startswith("data: "):
-                                data_str = line_str[6:].strip()
-                                try:
-                                    data = json.loads(data_str)
-                                    candidates = data.get("candidates", [])
-                                    if candidates:
-                                        parts = candidates[0].get("content", {}).get("parts", [])
-                                        for part in parts:
-                                            text = part.get("text", "")
-                                            if text:
-                                                streamed_any = True
-                                                yield text
-                                except Exception:
-                                    pass
-        except Exception as e:
-            logger.warning(f"Live Gemini SSE streaming error ({e}). Falling back.")
+
+        with httpx.Client(timeout=self.timeout) as client:
+            for model in models_to_try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
+                try:
+                    with client.stream("POST", url, headers=headers, json=payload) as response:
+                        if response.status_code == 200:
+                            import json
+                            for line in response.iter_lines():
+                                line_str = line.strip()
+                                if line_str.startswith("data: "):
+                                    data_str = line_str[6:].strip()
+                                    try:
+                                        data = json.loads(data_str)
+                                        candidates = data.get("candidates", [])
+                                        if candidates:
+                                            parts = candidates[0].get("content", {}).get("parts", [])
+                                            for part in parts:
+                                                text = part.get("text", "")
+                                                if text:
+                                                    streamed_any = True
+                                                    yield text
+                                    except Exception:
+                                        pass
+                            if streamed_any:
+                                break
+                        elif response.status_code in (404, 429, 503):
+                            logger.warning(
+                                f"Gemini streaming {model} returned HTTP {response.status_code}. Trying next candidate..."
+                            )
+                            continue
+                        else:
+                            break
+                except Exception as e:
+                    logger.warning(f"Live Gemini SSE streaming error on {model} ({e}). Trying next candidate...")
+                    continue
 
         if not streamed_any:
-            # Fallback to standard generation and yield words
+            # Fallback to standard generation across all candidate models
             full_text = self.generate_response(system_prompt, user_prompt, max_tokens, temperature)
             words = re.findall(r"\S+|\s+", full_text)
             for w in words:
