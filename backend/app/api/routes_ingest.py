@@ -252,6 +252,7 @@ async def ingest_git_repository(
         name=validation.repo_name,
         source_type=SourceType.GIT,
         owner_id=user.id,
+        git_url=req.url,
     )
 
     target_dir = repo_manager.get_repo_dir(repo.repo_id)

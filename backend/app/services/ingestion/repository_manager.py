@@ -67,6 +67,7 @@ class RepositoryManager:
         source_type: SourceType,
         stats: Optional[RepositoryStats] = None,
         owner_id: Optional[str] = None,
+        git_url: Optional[str] = None,
     ) -> RepositorySummary:
         """Initializes a new isolated repository entry with full progress tracking."""
         repo_id = str(uuid.uuid4())
@@ -83,6 +84,7 @@ class RepositoryManager:
             source_type=source_type,
             status=RepositoryStatus.PROCESSING,
             created_at=created_at,
+            git_url=git_url,
             stats=stats or RepositoryStats(),
             progress=initial_progress,
             owner_id=owner_id,
@@ -121,7 +123,7 @@ class RepositoryManager:
         repo_id: str,
         progress: IngestionProgress,
     ) -> Optional[RepositorySummary]:
-        repo = self._repositories.get(repo_id)
+        repo = self.get_repository(repo_id)
         if not repo:
             return None
         repo.progress = progress
@@ -135,7 +137,7 @@ class RepositoryManager:
         status: RepositoryStatus,
         stats: Optional[RepositoryStats] = None,
     ) -> Optional[RepositorySummary]:
-        repo = self._repositories.get(repo_id)
+        repo = self.get_repository(repo_id)
         if not repo:
             return None
         repo.status = status
@@ -147,6 +149,13 @@ class RepositoryManager:
         return repo
 
     def get_repository(self, repo_id: str) -> Optional[RepositorySummary]:
+        if repo_id not in self._repositories and is_mongo_available():
+            try:
+                raw_data = MongoStorage.get_repository(repo_id)
+                if raw_data:
+                    self._repositories[repo_id] = RepositorySummary(**raw_data)
+            except Exception as e:
+                logger.warning(f"Failed to load repository '{repo_id}' from MongoDB: {e}")
         return self._repositories.get(repo_id)
 
     def list_repositories(self, owner_id: Optional[str] = None) -> list[RepositorySummary]:

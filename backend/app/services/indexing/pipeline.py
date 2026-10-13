@@ -30,7 +30,8 @@ settings = get_settings()
 def run_repository_indexing(repo_id: str) -> bool:
     """
     Executes stages 3 (Chunking), 4 (Building search index), and 5 (Ready)
-    for an ingested repository.
+    for an ingested repository. Automatically recovers missing repository files
+    for Git sources if the server container restarted.
     """
     start_time = time.time()
     repo = repo_manager.get_repository(repo_id)
@@ -40,11 +41,30 @@ def run_repository_indexing(repo_id: str) -> bool:
 
     target_dir = repo_manager.get_repo_dir(repo_id)
     if not target_dir.exists():
-        logger.error(f"Cannot index repository '{repo_id}': target dir {target_dir} does not exist.")
-        if repo.progress:
-            ProgressTracker.fail(repo.progress, 3, "Extracted repository directory not found on disk.")
-        repo_manager.update_status(repo_id, RepositoryStatus.FAILED)
-        return False
+        if repo.git_url:
+            logger.info(f"Target dir {target_dir} missing on disk; re-cloning from {repo.git_url}...")
+            try:
+                from ..ingestion.git_cloner import clone_and_filter_public_repo
+                clone_and_filter_public_repo(
+                    raw_url=repo.git_url,
+                    target_dir=target_dir,
+                    limits=settings.limits,
+                    resolve_dns=True,
+                )
+            except Exception as e:
+                logger.error(f"Failed to auto-restore Git repository '{repo_id}': {e}", exc_info=True)
+                if repo.progress:
+                    ProgressTracker.fail(repo.progress, 3, f"Failed to restore repository files: {str(e)}")
+                    repo_manager.update_progress(repo_id, repo.progress)
+                repo_manager.update_status(repo_id, RepositoryStatus.FAILED)
+                return False
+        else:
+            logger.error(f"Cannot index repository '{repo_id}': target dir {target_dir} does not exist.")
+            if repo.progress:
+                ProgressTracker.fail(repo.progress, 3, "Extracted repository directory not found on disk.")
+                repo_manager.update_progress(repo_id, repo.progress)
+            repo_manager.update_status(repo_id, RepositoryStatus.FAILED)
+            return False
 
     progress = repo.progress
     if not progress:
@@ -59,6 +79,7 @@ def run_repository_indexing(repo_id: str) -> bool:
 
         if total_files == 0:
             ProgressTracker.fail(progress, 3, "No supported source code files available to index.")
+            repo_manager.update_progress(repo_id, progress)
             repo_manager.update_status(repo_id, RepositoryStatus.FAILED)
             return False
 
@@ -71,6 +92,7 @@ def run_repository_indexing(repo_id: str) -> bool:
             current_count=0,
             total_count=total_files,
         )
+        repo_manager.update_progress(repo_id, progress)
 
         all_chunks: list[CodeChunk] = []
         total_lines_read = 0
@@ -108,12 +130,14 @@ def run_repository_indexing(repo_id: str) -> bool:
                     current_count=idx,
                     total_count=total_files,
                 )
+                repo_manager.update_progress(repo_id, progress)
 
         ProgressTracker.complete_stage(
             progress,
             step_number=3,
             detail=f"Generated {len(all_chunks)} syntax-bounded chunks across {total_files - failed_files_count} files",
         )
+        repo_manager.update_progress(repo_id, progress)
 
         # --- STAGE 4: Building search index ---
         total_chunks = len(all_chunks)
@@ -125,6 +149,7 @@ def run_repository_indexing(repo_id: str) -> bool:
             current_count=0,
             total_count=total_chunks,
         )
+        repo_manager.update_progress(repo_id, progress)
 
         embedding_provider = get_embedding_provider()
         chunk_texts = [c.content for c in all_chunks]
@@ -145,6 +170,7 @@ def run_repository_indexing(repo_id: str) -> bool:
             step_number=4,
             detail=f"Built persistent BM25 & vector index with {total_chunks} chunks",
         )
+        repo_manager.update_progress(repo_id, progress)
 
         # --- STAGE 5: Ready for questions ---
         duration = round(time.time() - start_time, 2)
@@ -166,6 +192,7 @@ def run_repository_indexing(repo_id: str) -> bool:
             step_number=5,
             detail=f"Repository ready for evidence-grounded Q&A ({len(all_chunks)} chunks, {duration}s)",
         )
+        repo_manager.update_progress(repo_id, progress)
 
         # Update repository stats and state
         repo_manager.update_status(
@@ -185,5 +212,6 @@ def run_repository_indexing(repo_id: str) -> bool:
         if progress:
             current_step = progress.current_step if progress.current_step else 3
             ProgressTracker.fail(progress, current_step, f"Indexing failed: {str(e)}")
+            repo_manager.update_progress(repo_id, progress)
         repo_manager.update_status(repo_id, RepositoryStatus.FAILED)
         return False

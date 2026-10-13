@@ -48,12 +48,24 @@ export const IndexingScreen: React.FC<IndexingScreenProps> = ({
     }
   }, [repo.repo_id]);
 
-  useEffect(() => {
-    let mounted = true;
+  const startPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearTimeout(pollingRef.current);
+    }
+
+    let consecutiveErrors = 0;
 
     const poll = async () => {
       const current = await fetchProgress();
-      if (!mounted) return;
+
+      if (!current) {
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= 6) {
+          return;
+        }
+      } else {
+        consecutiveErrors = 0;
+      }
 
       // Stop polling once finished or failed
       if (current?.overall_status === "ready" || current?.overall_status === "failed") {
@@ -64,25 +76,25 @@ export const IndexingScreen: React.FC<IndexingScreenProps> = ({
     };
 
     poll();
+  }, [fetchProgress]);
+
+  useEffect(() => {
+    startPolling();
 
     return () => {
-      mounted = false;
       if (pollingRef.current) {
         clearTimeout(pollingRef.current);
       }
     };
-  }, [fetchProgress]);
+  }, [startPolling]);
 
   const handleRetry = async () => {
     setIsRetrying(true);
     setError(null);
     try {
       await triggerIndexing(repo.repo_id);
-      // Wait a moment and resume polling
-      setTimeout(() => {
-        setIsRetrying(false);
-        fetchProgress();
-      }, 500);
+      setIsRetrying(false);
+      startPolling();
     } catch (err: unknown) {
       setIsRetrying(false);
       const msg = err instanceof ApiError ? err.message : "Failed to trigger retry.";
@@ -91,7 +103,7 @@ export const IndexingScreen: React.FC<IndexingScreenProps> = ({
   };
 
   const isReady = progress?.overall_status === "ready";
-  const isFailed = progress?.overall_status === "failed" || Boolean(error && !progress);
+  const isFailed = progress?.overall_status === "failed" || Boolean(error);
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 py-4">

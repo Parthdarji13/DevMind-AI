@@ -98,6 +98,7 @@ class RepositorySummary(BaseModel):
     source_type: SourceType
     status: RepositoryStatus
     created_at: str
+    git_url: Optional[str] = None
     stats: RepositoryStats
     progress: Optional[IngestionProgress] = None
     owner_id: Optional[str] = None

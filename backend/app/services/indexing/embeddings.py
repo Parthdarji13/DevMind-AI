@@ -368,27 +368,22 @@ def get_embedding_provider(provider_name: Optional[str] = None) -> BaseEmbedding
     """
     settings = get_settings()
     choice = (provider_name or settings.embedding_provider).lower()
+    if choice in ("local", "local_semantic", "local_hash", "hash"):
+        return LocalSemanticEmbeddingProvider()
 
-    if choice in ("fastembed", "local", "local_semantic", "sentence-transformers", "sentence_transformers"):
-        # 1. Prefer FastEmbed (fast ONNX neural transformer embeddings)
+    elif choice in ("fastembed",):
         try:
             import fastembed  # noqa: F401
             return FastEmbedEmbeddingProvider()
         except Exception:
-            pass
+            return LocalSemanticEmbeddingProvider()
 
-        # 2. Try SentenceTransformers if available
+    elif choice in ("sentence-transformers", "sentence_transformers"):
         try:
             import sentence_transformers  # noqa: F401
             return SentenceTransformerEmbeddingProvider()
         except Exception:
-            pass
-
-        # 3. Fallback to LocalSemantic deterministic hash projection
-        return LocalSemanticEmbeddingProvider()
-
-    elif choice in ("local_hash", "hash"):
-        return LocalSemanticEmbeddingProvider()
+            return LocalSemanticEmbeddingProvider()
 
     elif choice in ("google", "google_genai", "gemini"):
         model = settings.embedding_model if "embedding" in settings.embedding_model else "gemini-embedding-001"
