@@ -120,13 +120,14 @@ def run_repository_indexing(repo_id: str) -> bool:
             )
             all_chunks.extend(file_chunks)
 
-            # Update progress periodically
-            if idx % 10 == 0 or idx == total_files:
+            # Update progress frequently so user sees live file progress
+            update_interval = 2 if total_files > 20 else 1
+            if idx % update_interval == 0 or idx == total_files:
                 ProgressTracker.advance_to_stage(
                     progress,
                     step_number=3,
                     status=StageStatus.IN_PROGRESS,
-                    detail=f"Chunking {idx} of {total_files} source files...",
+                    detail=f"Chunking {idx} of {total_files} files ({len(all_chunks)} chunks generated)...",
                     current_count=idx,
                     total_count=total_files,
                 )
@@ -153,7 +154,28 @@ def run_repository_indexing(repo_id: str) -> bool:
 
         embedding_provider = get_embedding_provider()
         chunk_texts = [c.content for c in all_chunks]
-        vectors = embedding_provider.embed_texts(chunk_texts, batch_size=32)
+
+        # Compute embeddings incrementally in batches and report live progress
+        batch_size = 20
+        vectors: list[list[float]] = []
+
+        for i in range(0, total_chunks, batch_size):
+            batch_slice = chunk_texts[i : i + batch_size]
+            batch_vectors = embedding_provider.embed_texts(batch_slice, batch_size=len(batch_slice))
+            vectors.extend(batch_vectors)
+
+            done_chunks = len(vectors)
+            ProgressTracker.advance_to_stage(
+                progress,
+                step_number=4,
+                status=StageStatus.IN_PROGRESS,
+                detail=f"Computing embeddings for {done_chunks} of {total_chunks} chunks...",
+                current_count=done_chunks,
+                total_count=total_chunks,
+            )
+            repo_manager.update_progress(repo_id, progress)
+            # Gentle pacing so frontend polling captures intermediate batches smoothly
+            time.sleep(0.04)
 
         # Save to isolated persistent index store
         store = PersistentIndexStore(repo_id=repo_id)

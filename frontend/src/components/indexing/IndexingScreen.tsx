@@ -72,7 +72,7 @@ export const IndexingScreen: React.FC<IndexingScreenProps> = ({
         return;
       }
 
-      pollingRef.current = setTimeout(poll, 1200);
+      pollingRef.current = setTimeout(poll, 650);
     };
 
     poll();
