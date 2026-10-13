@@ -227,5 +227,18 @@ export interface VoiceChatResponse {
   audio_base64?: string | null;
 }
 
+export interface RepoFileInfo {
+  file_path: string;
+  line_count: number;
+  chunk_count: number;
+  language: string;
+}
+
+export interface RepoFilesResponse {
+  repo_id: string;
+  total_files: number;
+  files: RepoFileInfo[];
+}
+
 
 

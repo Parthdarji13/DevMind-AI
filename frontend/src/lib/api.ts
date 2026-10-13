@@ -16,6 +16,7 @@ import {
   QuizResponse,
   VoiceChatRequest,
   VoiceChatResponse,
+  RepoFilesResponse,
 } from "./types";
 import { getStoredToken, getStoredUser } from "./auth";
 
@@ -639,6 +640,34 @@ export async function askVoiceQuestion(req: VoiceChatRequest): Promise<VoiceChat
 
     if (!res.ok) {
       let errDetail = `Voice request failed (${res.status})`;
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errDetail;
+      } catch {}
+      throw new ApiError(res.status, errDetail);
+    }
+
+    return await res.json();
+  } catch (err: unknown) {
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(0, msg);
+  }
+}
+
+/**
+ * Fetches all indexed source files in the repository for the sidebar file explorer.
+ */
+export async function getRepoFiles(repoId: string): Promise<RepoFilesResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/files/${encodeURIComponent(repoId)}`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
+
+    if (!res.ok) {
+      let errDetail = `Failed to fetch repository files (${res.status})`;
       try {
         const errJson = await res.json();
         errDetail = errJson.detail || errDetail;

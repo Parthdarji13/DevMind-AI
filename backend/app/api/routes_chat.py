@@ -21,6 +21,8 @@ from ..models.chat import (
     QuizResponse,
     VoiceChatRequest,
     VoiceChatResponse,
+    RepoFilesResponse,
+    RepoFileInfo,
 )
 from ..services.indexing.storage import PersistentIndexStore
 from ..services.llm.advanced_features import AdvancedFeaturesService
@@ -190,6 +192,65 @@ async def get_suggested_questions(
 
     suggester = SuggestionService()
     return suggester.generate_suggestions(repo_id_clean)
+
+
+@router.get(
+    "/api/chat/files/{repo_id}",
+    response_model=RepoFilesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get all indexed files in the repository for interactive code explorer",
+)
+def get_repository_files(
+    repo_id: str,
+    user: UserContext = Depends(get_current_user),
+    qa_service: QAService = Depends(get_qa_service),
+) -> RepoFilesResponse:
+    """Returns all indexed source files with metadata for the interactive sidebar file explorer."""
+    repo_id_clean = repo_id.strip()
+    if not repo_id_clean:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Repository ID cannot be empty.",
+        )
+
+    require_repo_access(repo_id_clean, user)
+
+    store = qa_service.retrieval_manager.storage_manager.get_store(repo_id_clean)
+    if not store.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repo_id_clean}' has not been indexed yet.",
+        )
+
+    chunks = store.get_chunks()
+    file_map: dict[str, dict] = {}
+    for c in chunks:
+        fp = c.file_path
+        if fp not in file_map:
+            file_map[fp] = {
+                "chunk_count": 0,
+                "max_line": 0,
+                "language": getattr(c, "language", None) or "text",
+            }
+        file_map[fp]["chunk_count"] += 1
+        if c.end_line > file_map[fp]["max_line"]:
+            file_map[fp]["max_line"] = c.end_line
+
+    files_list = [
+        RepoFileInfo(
+            file_path=fp,
+            line_count=info["max_line"],
+            chunk_count=info["chunk_count"],
+            language=info["language"],
+        )
+        for fp, info in sorted(file_map.items(), key=lambda x: x[0].lower())
+    ]
+
+    return RepoFilesResponse(
+        repo_id=repo_id_clean,
+        total_files=len(files_list),
+        files=files_list,
+    )
 
 
 @router.get(

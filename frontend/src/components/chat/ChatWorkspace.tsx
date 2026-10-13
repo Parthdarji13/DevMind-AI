@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   MessageSquare,
   Sparkles,
@@ -13,6 +13,8 @@ import {
   Download,
   Mic,
   Radio,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from "lucide-react";
 import { IngestResponse, IngestionProgress, Citation, ChatMessage, SuggestedQuestion } from "@/lib/types";
 import { askChatQuestionStream, getIngestionProgress, getSuggestedQuestions, ApiError } from "@/lib/api";
@@ -54,6 +56,13 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   const [isArchMapOpen, setIsArchMapOpen] = useState(false);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Extract user question strings for session history
+  const recentQuestions = useMemo(
+    () => messages.filter((m) => m.role === "user").map((m) => m.content),
+    [messages]
+  );
 
   // Suggested inquiries state (Step 29)
   const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
@@ -284,14 +293,39 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col lg:flex-row items-start gap-6 py-4">
-      {/* Sidebar Overview */}
-      <ChatSidebar repo={repo} progress={progress} onNewRepo={onNewRepo} />
+      {/* Interactive AI Codebase Explorer & Tools Sidebar */}
+      <ChatSidebar
+        repo={repo}
+        onNewRepo={onNewRepo}
+        onSelectPrompt={handleSendMessage}
+        onNewChat={handleClearChat}
+        onOpenVoiceCall={() => setIsVoiceOpen(true)}
+        onOpenFlowTrace={() => setIsFlowTraceOpen(true)}
+        onOpenOnboarding={() => setIsOnboardingOpen(true)}
+        onOpenArchMap={() => setIsArchMapOpen(true)}
+        onOpenQuiz={() => setIsQuizOpen(true)}
+        onExportChat={handleExportChat}
+        recentQuestions={recentQuestions}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+      />
 
       {/* Main Chat Panel */}
       <section className="flex-1 w-full bg-white border border-[#E5E2DB] rounded-2xl shadow-sm flex flex-col h-[760px] overflow-hidden">
         {/* Chat Thread Header */}
         <div className="px-5 py-3 border-b border-[#EAE8E2] bg-[#FAF9F6] flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
+            {isSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed(false)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg text-[#0B6E5F] bg-[#E6F4F1] hover:bg-[#D2EDE7] border border-[#BDE3DC] transition-colors cursor-pointer mr-1"
+                title="Expand Codebase Explorer & Tools"
+              >
+                <PanelLeftOpen className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Explorer</span>
+              </button>
+            )}
             <div className="w-7 h-7 rounded-lg bg-[#E6F4F1] text-[#0B6E5F] flex items-center justify-center">
               <MessageSquare className="w-4 h-4" />
             </div>

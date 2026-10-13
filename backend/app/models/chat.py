@@ -199,4 +199,19 @@ class VoiceChatResponse(BaseModel):
     audio_base64: Optional[str] = Field(None, description="Base64 encoded lifelike MP3 speech audio")
 
 
+class RepoFileInfo(BaseModel):
+    """Metadata for an indexed repository file."""
+    file_path: str = Field(..., description="Repository relative file path")
+    line_count: int = Field(default=0, description="Highest line number in file")
+    chunk_count: int = Field(default=1, description="Number of indexed code chunks for this file")
+    language: str = Field(default="text", description="Detected programming language")
+
+
+class RepoFilesResponse(BaseModel):
+    """Collection of indexed repository files for the interactive explorer."""
+    repo_id: str = Field(..., description="Repository identifier")
+    total_files: int = Field(default=0, description="Count of indexed files")
+    files: list[RepoFileInfo] = Field(default_factory=list, description="List of indexed files")
+
+
 
