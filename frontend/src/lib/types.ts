@@ -240,5 +240,14 @@ export interface RepoFilesResponse {
   files: RepoFileInfo[];
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  repo_id: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: any[]; // ChatMessageDisplay[]
+}
+
 
 

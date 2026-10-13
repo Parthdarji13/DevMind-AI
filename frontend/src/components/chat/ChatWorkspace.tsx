@@ -16,7 +16,7 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
 } from "lucide-react";
-import { IngestResponse, IngestionProgress, Citation, ChatMessage, SuggestedQuestion } from "@/lib/types";
+import { IngestResponse, IngestionProgress, Citation, ChatMessage, SuggestedQuestion, ChatSession } from "@/lib/types";
 import { askChatQuestionStream, getIngestionProgress, getSuggestedQuestions, ApiError } from "@/lib/api";
 import { getStoredUser } from "@/lib/auth";
 import { ChatSidebar } from "./ChatSidebar";
@@ -30,15 +30,25 @@ import { ArchitectureMapModal } from "./ArchitectureMapModal";
 import { LearningQuizModal } from "./LearningQuizModal";
 import { VoiceConversationModal } from "./VoiceConversationModal";
 
+import {
+  loadStoredSessions,
+  saveStoredSessions,
+  saveRepoMeta,
+} from "@/lib/chatStorage";
+
 interface ChatWorkspaceProps {
   repo: IngestResponse;
   onNewRepo: () => void;
+  initialSessionId?: string | null;
 }
 
 export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   repo,
   onNewRepo,
+  initialSessionId,
 }) => {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageDisplay[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -58,17 +68,131 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  // Extract user question strings for session history
-  const recentQuestions = useMemo(
-    () => messages.filter((m) => m.role === "user").map((m) => m.content),
-    [messages]
-  );
-
   // Suggested inquiries state (Step 29)
   const [suggestions, setSuggestions] = useState<SuggestedQuestion[]>([]);
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Initialize or restore sessions for this repository from localStorage
+  useEffect(() => {
+    saveRepoMeta(repo);
+    const stored = loadStoredSessions(repo.repo_id);
+    if (stored.length > 0) {
+      setSessions(stored);
+      const active = (initialSessionId && stored.find((s) => s.id === initialSessionId)) || stored[0];
+      setActiveSessionId(active.id);
+      setSessionId(active.id);
+      setMessages(active.messages || []);
+    } else {
+      const initial: ChatSession = {
+        id: initialSessionId || `sess-${Date.now()}`,
+        title: "New Chat",
+        repo_id: repo.repo_id,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: [],
+      };
+      setSessions([initial]);
+      setActiveSessionId(initial.id);
+      setSessionId(initial.id);
+      setMessages([]);
+      saveStoredSessions(repo.repo_id, [initial]);
+    }
+  }, [repo.repo_id, initialSessionId]);
+
+  // Helper to persist updated messages to the active session and localStorage
+  const syncSessionMessages = (
+    currentId: string | null,
+    newMessages: ChatMessageDisplay[],
+    firstQuestionPrompt?: string
+  ) => {
+    if (!currentId) return;
+    setSessions((prev) => {
+      const updated = prev.map((s) => {
+        if (s.id === currentId) {
+          let title = s.title;
+          if (
+            (title === "New Chat" || title === "Untitled Chat") &&
+            firstQuestionPrompt &&
+            firstQuestionPrompt.trim()
+          ) {
+            // Auto generate title from first question
+            const clean = firstQuestionPrompt.replace(/^[🎙️\s!]+/, "").trim();
+            title = clean.length > 36 ? `${clean.slice(0, 36)}...` : clean;
+          }
+          return {
+            ...s,
+            messages: newMessages,
+            title,
+            updatedAt: Date.now(),
+          };
+        }
+        return s;
+      });
+      saveStoredSessions(repo.repo_id, updated);
+      return updated;
+    });
+  };
+
+  // Resume an existing session from history
+  const handleSelectSession = (targetSessionId: string) => {
+    const target = sessions.find((s) => s.id === targetSessionId);
+    if (!target) return;
+    setActiveSessionId(target.id);
+    setSessionId(target.id);
+    setMessages(target.messages || []);
+    setError(null);
+  };
+
+  // Start a fresh new chat session
+  const handleNewChat = () => {
+    const newSession: ChatSession = {
+      id: `sess-${Date.now()}`,
+      title: "New Chat",
+      repo_id: repo.repo_id,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: [],
+    };
+    const updated = [newSession, ...sessions];
+    setSessions(updated);
+    setActiveSessionId(newSession.id);
+    setSessionId(newSession.id);
+    setMessages([]);
+    setError(null);
+    saveStoredSessions(repo.repo_id, updated);
+  };
+
+  // Rename a chat session title
+  const handleRenameSession = (targetId: string, newTitle: string) => {
+    setSessions((prev) => {
+      const updated = prev.map((s) =>
+        s.id === targetId ? { ...s, title: newTitle.trim(), updatedAt: Date.now() } : s
+      );
+      saveStoredSessions(repo.repo_id, updated);
+      return updated;
+    });
+  };
+
+  // Delete a chat session
+  const handleDeleteSession = (targetId: string) => {
+    const remaining = sessions.filter((s) => s.id !== targetId);
+    saveStoredSessions(repo.repo_id, remaining);
+
+    if (remaining.length === 0) {
+      handleNewChat();
+      return;
+    }
+
+    setSessions(remaining);
+    if (activeSessionId === targetId) {
+      const nextActive = remaining[0];
+      setActiveSessionId(nextActive.id);
+      setSessionId(nextActive.id);
+      setMessages(nextActive.messages || []);
+    }
+  };
 
   // Load progress details for the sidebar on mount
   useEffect(() => {
@@ -131,8 +255,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
     };
 
     // Add user message & streaming assistant placeholder
-    setMessages((prev) => [...prev, userMsg, initialAssistantMsg]);
+    const updatedWithUser = [...messages, userMsg];
+    setMessages([...updatedWithUser, initialAssistantMsg]);
     setIsLoading(true);
+    syncSessionMessages(activeSessionId, updatedWithUser, question);
 
     try {
       // Build conversation history for the backend
@@ -147,7 +273,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           repo_id: repo.repo_id,
           question: question,
           history: historyPayload,
-          session_id: sessionId,
+          session_id: activeSessionId || sessionId,
           user_name: currentUser?.name || currentUser?.id || "Parth",
         },
         {
@@ -169,20 +295,21 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
             if (res.session_id) {
               setSessionId(res.session_id);
             }
+            const completedAstMsg: ChatMessageDisplay = {
+              id: assistantMsgId,
+              role: "assistant",
+              content: res.answer || "",
+              citations: res.citations,
+              abstained: res.abstained,
+              inference_detected: res.inference_detected,
+              isStreaming: false,
+              timestamp: nowTime,
+            };
+
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMsgId
-                  ? {
-                    ...m,
-                    content: res.answer || m.content,
-                    citations: res.citations,
-                    abstained: res.abstained,
-                    inference_detected: res.inference_detected,
-                    isStreaming: false,
-                  }
-                  : m
-              )
+              prev.map((m) => (m.id === assistantMsgId ? completedAstMsg : m))
             );
+            syncSessionMessages(activeSessionId, [...updatedWithUser, completedAstMsg]);
           },
           onError: (err) => {
             console.warn("Stream error encountered:", err);
@@ -193,17 +320,17 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
       const msg = err instanceof ApiError ? err.message : "Failed to generate answer.";
       setError(msg);
       // Mark assistant message as finished if failed
+      const failedMsg: ChatMessageDisplay = {
+        id: assistantMsgId,
+        role: "assistant",
+        content: "Unable to complete response. Please retry.",
+        isStreaming: false,
+        timestamp: nowTime,
+      };
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantMsgId
-            ? {
-              ...m,
-              content: m.content || "Unable to complete response. Please retry.",
-              isStreaming: false,
-            }
-            : m
-        )
+        prev.map((m) => (m.id === assistantMsgId ? failedMsg : m))
       );
+      syncSessionMessages(activeSessionId, [...updatedWithUser, failedMsg]);
     } finally {
       setIsLoading(false);
     }
@@ -211,8 +338,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
 
   const handleClearChat = () => {
     setMessages([]);
-    setSessionId(null);
     setError(null);
+    if (activeSessionId) {
+      syncSessionMessages(activeSessionId, []);
+    }
   };
 
   // Feature 10: Chat Export to Markdown
@@ -288,24 +417,22 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
       timestamp: nowTime,
     };
 
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    const allTurns = [...messages, userMsg, assistantMsg];
+    setMessages(allTurns);
+    syncSessionMessages(activeSessionId, allTurns, question);
   };
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col lg:flex-row items-start gap-6 py-4">
-      {/* Interactive AI Codebase Explorer & Tools Sidebar */}
+      {/* Chat History & Sessions Sidebar */}
       <ChatSidebar
         repo={repo}
-        onNewRepo={onNewRepo}
-        onSelectPrompt={handleSendMessage}
-        onNewChat={handleClearChat}
-        onOpenVoiceCall={() => setIsVoiceOpen(true)}
-        onOpenFlowTrace={() => setIsFlowTraceOpen(true)}
-        onOpenOnboarding={() => setIsOnboardingOpen(true)}
-        onOpenArchMap={() => setIsArchMapOpen(true)}
-        onOpenQuiz={() => setIsQuizOpen(true)}
-        onExportChat={handleExportChat}
-        recentQuestions={recentQuestions}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleNewChat}
+        onRenameSession={handleRenameSession}
+        onDeleteSession={handleDeleteSession}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
       />
@@ -314,26 +441,26 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
       <section className="flex-1 w-full bg-white border border-[#E5E2DB] rounded-2xl shadow-sm flex flex-col h-[760px] overflow-hidden">
         {/* Chat Thread Header */}
         <div className="px-5 py-3 border-b border-[#EAE8E2] bg-[#FAF9F6] flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {isSidebarCollapsed && (
               <button
                 type="button"
                 onClick={() => setIsSidebarCollapsed(false)}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg text-[#0B6E5F] bg-[#E6F4F1] hover:bg-[#D2EDE7] border border-[#BDE3DC] transition-colors cursor-pointer mr-1"
-                title="Expand Codebase Explorer & Tools"
+                title="Expand Chat History"
               >
                 <PanelLeftOpen className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Explorer</span>
+                <span className="hidden sm:inline">History</span>
               </button>
             )}
-            <div className="w-7 h-7 rounded-lg bg-[#E6F4F1] text-[#0B6E5F] flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-[#E6F4F1] text-[#0B6E5F] flex items-center justify-center flex-shrink-0">
               <MessageSquare className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-[#1C2024] leading-tight">
-                Conversation Thread
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-[#1C2024] leading-tight truncate">
+                {sessions.find((s) => s.id === activeSessionId)?.title || "Conversation Thread"}
               </h3>
-              <p className="text-[11px] text-[#636A74]">
+              <p className="text-[11px] text-[#636A74] truncate">
                 Multi-turn grounded QA with verified citations
               </p>
             </div>
