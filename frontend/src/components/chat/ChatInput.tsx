@@ -53,6 +53,35 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, [text]);
 
+  // Removes glued identical halves like "hellohello" -> "hello", "testtest" -> "test"
+  const fixGluedDuplicate = (word: string): string => {
+    const trimmed = word.trim();
+    if (trimmed.length >= 4 && trimmed.length % 2 === 0) {
+      const half = trimmed.length / 2;
+      const firstHalf = trimmed.slice(0, half).toLowerCase();
+      const secondHalf = trimmed.slice(half).toLowerCase();
+      if (firstHalf === secondHalf) {
+        return trimmed.slice(0, half);
+      }
+    }
+    return trimmed;
+  };
+
+  // Removes consecutive duplicate words and repeats
+  const deduplicateSpokenWords = (text: string): string => {
+    if (!text) return "";
+    const rawWords = text.trim().split(/\s+/);
+    const cleaned: string[] = [];
+    for (let i = 0; i < rawWords.length; i++) {
+      const word = fixGluedDuplicate(rawWords[i]);
+      if (!word) continue;
+      if (cleaned.length === 0 || word.toLowerCase() !== cleaned[cleaned.length - 1].toLowerCase()) {
+        cleaned.push(word);
+      }
+    }
+    return cleaned.join(" ");
+  };
+
   // Clean code technical phrases from spoken words
   const cleanSpokenTranscript = (rawText: string): string => {
     let cleaned = rawText;
@@ -96,7 +125,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setVoiceError("Voice chat is not supported by your browser. Please use Chrome or Edge.");
+      setVoiceError("Voice chat is not supported by your browser. Please use Chrome, Edge, or Safari.");
       return;
     }
 
@@ -104,9 +133,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     baseTextRef.current = text.trim();
 
     try {
+      const isMobile =
+        typeof navigator !== "undefined" &&
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
       const recognition = new SpeechRecognition();
       recognition.lang = voiceLang;
-      recognition.continuous = true;
+      // On mobile browsers, continuous=true causes speech doubling ("hellohello") and instant timeouts
+      recognition.continuous = !isMobile;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
@@ -115,22 +149,37 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       };
 
       recognition.onresult = (event: any) => {
-        let finalTranscript = "";
-        let interimTranscript = "";
+        const finalParts: string[] = [];
+        const interimParts: string[] = [];
 
         for (let i = 0; i < event.results.length; ++i) {
           const item = event.results[i];
-          const transcriptText = item[0].transcript;
+          const transcriptText = item[0]?.transcript?.trim() || "";
+          if (!transcriptText) continue;
           if (item.isFinal) {
-            finalTranscript += transcriptText;
+            finalParts.push(transcriptText);
           } else {
-            interimTranscript += transcriptText;
+            interimParts.push(transcriptText);
           }
         }
 
-        const currentSpoken = (finalTranscript + interimTranscript).trim();
-        if (currentSpoken) {
-          const processed = cleanSpokenTranscript(currentSpoken);
+        const finalJoined = finalParts.join(" ").trim();
+        const interimJoined = interimParts.join(" ").trim();
+
+        // Avoid repeating if interim matches or overlaps end of final
+        let combined = finalJoined;
+        if (interimJoined) {
+          if (!combined) {
+            combined = interimJoined;
+          } else if (!combined.toLowerCase().endsWith(interimJoined.toLowerCase())) {
+            combined = `${combined} ${interimJoined}`;
+          }
+        }
+
+        combined = deduplicateSpokenWords(combined);
+
+        if (combined) {
+          const processed = cleanSpokenTranscript(combined);
           const base = baseTextRef.current;
           setText(base ? `${base} ${processed}` : processed);
         }

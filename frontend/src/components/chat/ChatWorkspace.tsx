@@ -28,7 +28,7 @@ import { FlowTraceModal } from "./FlowTraceModal";
 import { OnboardingDocModal } from "./OnboardingDocModal";
 import { ArchitectureMapModal } from "./ArchitectureMapModal";
 import { LearningQuizModal } from "./LearningQuizModal";
-import { VoiceConversationModal } from "./VoiceConversationModal";
+import { VoiceConversationModal, unlockMobileAudio } from "./VoiceConversationModal";
 
 import {
   loadStoredSessions,
@@ -501,7 +501,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           <div className="flex items-center flex-wrap gap-1.5">
             <button
               type="button"
-              onClick={() => setIsVoiceOpen(true)}
+              onClick={() => {
+                unlockMobileAudio();
+                setIsVoiceOpen(true);
+              }}
               className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg text-white bg-gradient-to-r from-[#0B6E5F] to-[#085247] hover:from-[#095b4e] hover:to-[#064239] transition-all cursor-pointer shadow-xs"
               title="Open hands-free real-time Voice Call"
             >
@@ -630,7 +633,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           <ChatInput
             onSendMessage={handleSendMessage}
             isLoading={isLoading}
-            onOpenVoiceCall={() => setIsVoiceOpen(true)}
+            onOpenVoiceCall={() => {
+              unlockMobileAudio();
+              setIsVoiceOpen(true);
+            }}
           />
         </div>
       </section>

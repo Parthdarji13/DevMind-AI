@@ -33,17 +33,68 @@ interface VoiceConversationModalProps {
 type CallPhase = "idle" | "listening" | "thinking" | "speaking" | "cooldown";
 type LanguageOption = "hi-IN" | "en-IN" | "en-US";
 
-// Utility to remove repeated stutter phrases (e.g. "Tell Tell me Tell me about")
-function deduplicateSpokenText(text: string): string {
-  const words = text.trim().split(/\s+/);
-  if (words.length <= 1) return text.trim();
+// Removes glued identical halves like "hellohello" -> "hello", "testtest" -> "test"
+export function fixGluedDuplicate(word: string): string {
+  const trimmed = word.trim();
+  if (trimmed.length >= 4 && trimmed.length % 2 === 0) {
+    const half = trimmed.length / 2;
+    const firstHalf = trimmed.slice(0, half);
+    const secondHalf = trimmed.slice(half);
+    if (firstHalf.toLowerCase() === secondHalf.toLowerCase()) {
+      return firstHalf;
+    }
+  }
+  return trimmed;
+}
+
+// Utility to remove repeated stutter phrases (e.g. "Tell Tell me Tell me about") and glued duplicates
+export function deduplicateSpokenText(text: string): string {
+  const rawWords = text.trim().split(/\s+/).filter(Boolean);
+  if (rawWords.length === 0) return "";
+  const fixedWords = rawWords.map(fixGluedDuplicate);
   const cleaned: string[] = [];
-  for (let i = 0; i < words.length; i++) {
-    if (i === 0 || words[i].toLowerCase() !== words[i - 1].toLowerCase()) {
-      cleaned.push(words[i]);
+  for (let i = 0; i < fixedWords.length; i++) {
+    if (i === 0 || fixedWords[i].toLowerCase() !== fixedWords[i - 1].toLowerCase()) {
+      cleaned.push(fixedWords[i]);
     }
   }
   return cleaned.join(" ");
+}
+
+// Global helper to unlock AudioContext and SpeechSynthesis on mobile user touch/click gestures
+export function unlockMobileAudio() {
+  if (typeof window === "undefined") return;
+
+  // 1. Resume / Prime Web Audio Context
+  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+  if (AudioCtx) {
+    try {
+      const dummyCtx = new AudioCtx();
+      if (dummyCtx.state === "suspended") {
+        dummyCtx.resume();
+      }
+      const buffer = dummyCtx.createBuffer(1, 1, 22050);
+      const source = dummyCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(dummyCtx.destination);
+      source.start(0);
+      setTimeout(() => {
+        try {
+          dummyCtx.close();
+        } catch {}
+      }, 500);
+    } catch {}
+  }
+
+  // 2. Prime Speech Synthesis
+  if ("speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.resume();
+      const dummyUtterance = new SpeechSynthesisUtterance("");
+      dummyUtterance.volume = 0;
+      window.speechSynthesis.speak(dummyUtterance);
+    } catch {}
+  }
 }
 
 export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
@@ -69,16 +120,14 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const latestTranscriptRef = useRef<string>("");
   const initialHistoryRef = useRef<ChatMessage[]>([]);
   const sessionTurnsRef = useRef<ChatMessage[]>([]);
+  const submitVoiceQueryRef = useRef<(q: string) => void>(() => {});
 
   const updatePhase = useCallback((newPhase: CallPhase) => {
     callPhaseRef.current = newPhase;
@@ -120,14 +169,14 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
     }
   }, []);
 
-  // Start speech recognition cleanly
+  // Start speech recognition cleanly (mobile-optimized)
   const startListening = useCallback(() => {
     if (typeof window === "undefined") return;
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setNetworkErrorNotice("Web Speech recognition is not supported in this browser.");
+      setNetworkErrorNotice("Web Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.");
       return;
     }
 
@@ -140,8 +189,13 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
       stopListening();
       updatePhase("listening");
 
+      const isMobile =
+        typeof navigator !== "undefined" &&
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      // On mobile browsers, continuous = true causes speech doubling ("hellohello") and instant timeouts
+      recognition.continuous = !isMobile;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
       recognition.lang = language; // 'en-IN', 'hi-IN', or 'en-US'
@@ -155,32 +209,46 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
         // Safety guard: if phase changed, ignore results
         if (callPhaseRef.current !== "listening") return;
 
-        let interim = "";
-        let final = "";
+        const finalParts: string[] = [];
+        const interimParts: string[] = [];
 
         for (let i = 0; i < event.results.length; i++) {
           const item = event.results[i];
+          const transcriptText = item[0]?.transcript?.trim() || "";
+          if (!transcriptText) continue;
           if (item.isFinal) {
-            final += item[0].transcript;
+            finalParts.push(transcriptText);
           } else {
-            interim += item[0].transcript;
+            interimParts.push(transcriptText);
           }
         }
 
-        const combined = (final + " " + interim).trim();
+        const finalJoined = finalParts.join(" ").trim();
+        const interimJoined = interimParts.join(" ").trim();
+
+        let combined = finalJoined;
+        if (interimJoined) {
+          if (!combined) {
+            combined = interimJoined;
+          } else if (!combined.toLowerCase().endsWith(interimJoined.toLowerCase())) {
+            combined = `${combined} ${interimJoined}`;
+          }
+        }
+
+        combined = deduplicateSpokenText(combined);
+
         if (combined) {
-          const cleaned = deduplicateSpokenText(combined);
-          setUserTranscript(cleaned);
-          latestTranscriptRef.current = cleaned;
+          setUserTranscript(combined);
+          latestTranscriptRef.current = combined;
 
           // Hands-free VAD: Fast 650ms debounce for final sentence, 850ms for interim
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-          const debounceDelay = final.trim().length > 0 ? 650 : 850;
+          const debounceDelay = finalParts.length > 0 ? 650 : 850;
           silenceTimerRef.current = setTimeout(() => {
             const queryToSend = latestTranscriptRef.current.trim();
             if (queryToSend.length >= 2) {
               latestTranscriptRef.current = "";
-              submitVoiceQuery(queryToSend);
+              submitVoiceQueryRef.current(queryToSend);
             }
           }, debounceDelay);
         }
@@ -190,15 +258,16 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
         console.warn("Speech recognition error:", event.error);
         if (event.error === "network") {
           setNetworkErrorNotice(
-            "Speech recognition network blocked. In Brave Browser, enable Google Speech Services under brave://settings/system, or use Google Chrome / Edge."
+            "Speech recognition network blocked. In Brave Browser, enable Google Speech Services under brave://settings/system, or use Google Chrome / Safari."
           );
         } else if (event.error === "not-allowed") {
-          setNetworkErrorNotice("Microphone permission was denied. Please allow microphone access.");
+          setNetworkErrorNotice("Microphone permission was denied. Please allow microphone access in your browser settings.");
+        } else if (event.error === "audio-capture") {
+          setNetworkErrorNotice("Microphone could not be accessed. Please ensure no other app is using your mic.");
         }
 
-        // If no speech detected in this turn, remain in listening or ready state
+        // If no speech detected in this turn, keep listening ready for next utterance
         if (event.error === "no-speech") {
-          // Keep listening ready for next utterance
           return;
         }
 
@@ -417,62 +486,47 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
     [repo.repo_id, onSyncTurn, stopListening, stopAllAudio, updatePhase, playNeuralAudio]
   );
 
-  // Audio Visualizer for reactive orb
-  const setupAudioVisualizer = useCallback(async () => {
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) return;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
+  // Keep submitVoiceQueryRef updated
+  submitVoiceQueryRef.current = submitVoiceQuery;
 
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
+  // Smooth reactive orb animation based on call phase (No getUserMedia mic locking!)
+  const startAudioVisualizer = useCallback(() => {
+    let phaseAngle = 0;
 
-      const audioCtx = new AudioCtx();
-      audioContextRef.current = audioCtx;
+    const animateVisualizer = () => {
+      phaseAngle += 0.08;
+      const currentPhase = callPhaseRef.current;
 
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 64;
-      analyser.smoothingTimeConstant = 0.8;
-      analyserRef.current = analyser;
+      let targetLevel = 0;
+      if (currentPhase === "listening") {
+        const base = 25 + Math.sin(phaseAngle) * 15;
+        const speechBoost = latestTranscriptRef.current ? 35 : 0;
+        targetLevel = Math.min(100, Math.round(base + speechBoost));
+      } else if (currentPhase === "speaking") {
+        const voicePulse = 55 + Math.sin(phaseAngle * 2) * 25 + Math.cos(phaseAngle * 3.3) * 10;
+        targetLevel = Math.min(100, Math.round(voicePulse));
+      } else if (currentPhase === "thinking") {
+        targetLevel = Math.round(20 + Math.sin(phaseAngle * 1.5) * 12);
+      } else if (currentPhase === "cooldown") {
+        targetLevel = Math.round(15 + Math.sin(phaseAngle) * 8);
+      } else {
+        targetLevel = 0;
+      }
 
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
+      setAudioLevel(targetLevel);
+      animFrameRef.current = requestAnimationFrame(animateVisualizer);
+    };
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      const checkVolume = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / dataArray.length;
-        const normalized = Math.min(100, Math.round((average / 128) * 100));
-        setAudioLevel(normalized);
-        animFrameRef.current = requestAnimationFrame(checkVolume);
-      };
-
-      checkVolume();
-    } catch (err) {
-      console.warn("Audio visualizer microphone stream unavailable:", err);
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
     }
+    animFrameRef.current = requestAnimationFrame(animateVisualizer);
   }, []);
 
   const cleanupAudioVisualizer = useCallback(() => {
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (audioContextRef.current) {
-      try {
-        audioContextRef.current.close();
-      } catch {}
-      audioContextRef.current = null;
     }
     setAudioLevel(0);
   }, []);
@@ -503,6 +557,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
 
   // Click Central Orb to manually trigger listening anytime
   const handleOrbClick = () => {
+    unlockMobileAudio();
     if (callPhase === "speaking") {
       handleInterrupt();
     } else if (callPhase === "listening") {
@@ -537,12 +592,10 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
       initialHistoryRef.current = [...history];
       sessionTurnsRef.current = [];
       setVoiceHistory([]);
-      setupAudioVisualizer();
-      setTimeout(() => {
-        if (!isMuted) {
-          startListening();
-        }
-      }, 200);
+      startAudioVisualizer();
+      if (!isMuted) {
+        startListening();
+      }
     } else {
       stopListening();
       stopAllAudio();
@@ -562,7 +615,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
       cleanupAudioVisualizer();
       if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
     };
-  }, [isOpen, setupAudioVisualizer, cleanupAudioVisualizer, startListening, stopListening, stopAllAudio, updatePhase, isMuted]);
+  }, [isOpen, startAudioVisualizer, cleanupAudioVisualizer, startListening, stopListening, stopAllAudio, updatePhase, isMuted, history]);
 
   if (!isOpen) return null;
 
@@ -612,6 +665,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
             <button
               type="button"
               onClick={() => {
+                unlockMobileAudio();
                 setLanguage("en-IN");
                 stopListening();
                 setTimeout(startListening, 200);
@@ -628,6 +682,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
             <button
               type="button"
               onClick={() => {
+                unlockMobileAudio();
                 setLanguage("hi-IN");
                 stopListening();
                 setTimeout(startListening, 200);
@@ -644,6 +699,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
             <button
               type="button"
               onClick={() => {
+                unlockMobileAudio();
                 setLanguage("en-US");
                 stopListening();
                 setTimeout(startListening, 200);
@@ -727,7 +783,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
 
           {/* The Glowing Core Sphere */}
           <div
-            className={`relative w-32 h-32 sm:w-36 sm:h-36 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 group-hover:scale-105 ${
+            className={`relative w-32 h-32 sm:w-36 sm:h-36 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 group-hover:scale-105 active:scale-95 ${
               callPhase === "listening"
                 ? "bg-gradient-to-tr from-[#0B6E5F] via-[#10B981] to-[#34D399] shadow-emerald-500/40 scale-105"
                 : callPhase === "thinking"
@@ -736,7 +792,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
                 ? "bg-gradient-to-tr from-[#0284C7] via-[#0EA5E9] to-[#14B8A6] shadow-cyan-500/50 scale-105"
                 : callPhase === "cooldown"
                 ? "bg-gradient-to-tr from-teal-700 to-emerald-800 shadow-teal-500/30 scale-100"
-                : "bg-gradient-to-tr from-slate-700 to-slate-800 shadow-slate-900/50 opacity-80"
+                : "bg-gradient-to-tr from-[#0B6E5F] to-[#14B8A6] shadow-emerald-500/40 ring-4 ring-emerald-500/30"
             }`}
           >
             {callPhase === "thinking" ? (
@@ -752,6 +808,11 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
               <CheckCircle2 className="w-9 h-9 text-emerald-300 animate-pulse" />
             ) : isMuted ? (
               <MicOff className="w-10 h-10 text-slate-400" />
+            ) : callPhase === "idle" ? (
+              <div className="flex flex-col items-center justify-center gap-1">
+                <Mic className="w-8 h-8 text-white animate-bounce" />
+                <span className="text-[10px] text-white font-semibold tracking-wide">Tap to Speak</span>
+              </div>
             ) : (
               <Mic
                 className={`w-10 h-10 text-white transition-transform ${
@@ -774,14 +835,14 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
                 ? "text-cyan-300 animate-pulse"
                 : callPhase === "cooldown"
                 ? "text-teal-300"
-                : "text-slate-400"
+                : "text-slate-300"
             }`}
           >
             {callPhase === "listening" && "Listening... speak now or tap orb"}
             {callPhase === "thinking" && "DevMind is checking codebase context..."}
             {callPhase === "speaking" && "DevMind is speaking out loud..."}
             {callPhase === "cooldown" && "Audio finishing... preparing mic for follow-up"}
-            {callPhase === "idle" && "Ready — speak or tap orb/prompt to start"}
+            {callPhase === "idle" && "Tap Orb to Speak • Real-time Call"}
           </p>
         </div>
 
@@ -864,7 +925,10 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
             <button
               key={prompt}
               type="button"
-              onClick={() => submitVoiceQuery(prompt)}
+              onClick={() => {
+                unlockMobileAudio();
+                submitVoiceQuery(prompt);
+              }}
               disabled={callPhase === "thinking"}
               className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300 hover:text-white transition-all cursor-pointer disabled:opacity-50"
             >
