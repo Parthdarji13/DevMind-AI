@@ -80,8 +80,8 @@ class Settings:
     limits: IngestionLimits = field(default_factory=IngestionLimits)
 
     # LLM Settings
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "google_genai").lower())
-    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "gemini-3-flash-preview"))
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "groq").lower())
+    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "openai/gpt-oss-120b"))
     llm_timeout_seconds: float = field(default_factory=lambda: float(os.getenv("LLM_TIMEOUT_SECONDS", "60.0")))
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))

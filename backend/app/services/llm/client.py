@@ -179,10 +179,20 @@ class GeminiLLMProvider(BaseLLMProvider):
             raise LLMAPIError(sanitize_error_text(f"Connection error to Gemini API: {str(last_error)}"))
 
         if last_resp.status_code == 429:
+            settings = get_settings()
+            if settings.groq_api_key and not settings.groq_api_key.startswith("your_"):
+                logger.warning("Gemini API quota exhausted across all models. Seamlessly falling back to Groq provider.")
+                groq_p = GroqLLMProvider(api_key=settings.groq_api_key, timeout=self.timeout)
+                return groq_p.generate_response(system_prompt, user_prompt, max_tokens, temperature)
             raise LLMRateLimitError("Gemini API rate limit exceeded (HTTP 429). Please retry in a moment.")
         elif last_resp.status_code in (401, 403):
             raise LLMConfigurationError("Gemini API authentication failed. Verify GEMINI_API_KEY.")
         elif last_resp.status_code == 503:
+            settings = get_settings()
+            if settings.groq_api_key and not settings.groq_api_key.startswith("your_"):
+                logger.warning("Gemini API experiencing high demand (HTTP 503). Seamlessly falling back to Groq provider.")
+                groq_p = GroqLLMProvider(api_key=settings.groq_api_key, timeout=self.timeout)
+                return groq_p.generate_response(system_prompt, user_prompt, max_tokens, temperature)
             raise LLMAPIError("Gemini API is currently experiencing temporary high demand (HTTP 503). Please retry in a few moments.")
         elif last_resp.status_code != 200:
             clean_text = sanitize_error_text(last_resp.text[:200])
@@ -258,6 +268,14 @@ class GeminiLLMProvider(BaseLLMProvider):
                     continue
 
         if not streamed_any:
+            settings = get_settings()
+            if settings.groq_api_key and not settings.groq_api_key.startswith("your_"):
+                logger.warning("Gemini streaming quota exhausted. Seamlessly streaming via Groq provider.")
+                groq_p = GroqLLMProvider(api_key=settings.groq_api_key, timeout=self.timeout)
+                for tok in groq_p.generate_stream(system_prompt, user_prompt, max_tokens, temperature):
+                    yield tok
+                return
+
             # Fallback to standard generation across all candidate models
             full_text = self.generate_response(system_prompt, user_prompt, max_tokens, temperature)
             words = re.findall(r"\S+|\s+", full_text)
@@ -322,14 +340,34 @@ class OpenAILLMProvider(BaseLLMProvider):
 
 
 class GroqLLMProvider(BaseLLMProvider):
-    """Groq provider (llama-3.3-70b-versatile)."""
+    """Groq provider (openai/gpt-oss-120b / qwen/qwen3.8-27b)."""
 
-    def __init__(self, api_key: str, model_name: str = "llama-3.3-70b-versatile", timeout: float = 60.0):
+    def __init__(self, api_key: str, model_name: str = "openai/gpt-oss-120b", timeout: float = 60.0):
         if not api_key or api_key.startswith("your_"):
             raise LLMConfigurationError("GROQ_API_KEY is not configured or contains placeholder value.")
         self.api_key = api_key
-        self.model_name = model_name
+        # Automatically map deprecated or Google model names to active Groq models
+        if not model_name or model_name in (
+            "llama-3.3-70b-versatile",
+            "llama-3.1-70b-versatile",
+            "llama3-70b-8192",
+            "llama3-8b-8192",
+            "mixtral-8x7b-32768",
+            "gemini-3-flash-preview",
+            "gemini-3.5-flash",
+            "gemini-flash-latest",
+        ):
+            self.model_name = "openai/gpt-oss-120b"
+        else:
+            self.model_name = model_name
         self.timeout = timeout
+
+    def _get_candidate_models(self) -> list[str]:
+        candidates = [self.model_name]
+        for fallback in ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]:
+            if fallback not in candidates:
+                candidates.append(fallback)
+        return candidates
 
     def generate_response(
         self,
@@ -343,37 +381,118 @@ class GroqLLMProvider(BaseLLMProvider):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
-            "model": self.model_name,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
+        models_to_try = self._get_candidate_models()
+        last_resp = None
+        last_error = None
 
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                resp = client.post(url, headers=headers, json=payload)
-        except httpx.TimeoutException as e:
-            raise LLMTimeoutError(f"Groq API request timed out after {self.timeout}s.") from e
-        except Exception as e:
-            raise LLMAPIError(sanitize_error_text(f"Connection error to Groq API: {str(e)}")) from e
+        with httpx.Client(timeout=self.timeout) as client:
+            for model in models_to_try:
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                }
+                try:
+                    resp = client.post(url, headers=headers, json=payload)
+                    last_resp = resp
+                    if resp.status_code == 200:
+                        break
+                    elif resp.status_code in (404, 429, 503):
+                        logger.warning(f"Groq model {model} returned HTTP {resp.status_code}. Trying next candidate...")
+                        continue
+                    else:
+                        break
+                except httpx.TimeoutException as e:
+                    last_error = e
+                    continue
+                except Exception as e:
+                    last_error = e
+                    continue
 
-        if resp.status_code == 429:
+        if last_resp is None:
+            if isinstance(last_error, httpx.TimeoutException):
+                raise LLMTimeoutError(f"Groq API request timed out after {self.timeout}s.") from last_error
+            raise LLMAPIError(sanitize_error_text(f"Connection error to Groq API: {str(last_error)}"))
+
+        if last_resp.status_code == 429:
             raise LLMRateLimitError("Groq API rate limit exceeded (HTTP 429).")
-        elif resp.status_code == 401 or resp.status_code == 403:
+        elif last_resp.status_code in (401, 403):
             raise LLMConfigurationError("Groq API authentication failed. Verify GROQ_API_KEY.")
-        elif resp.status_code != 200:
-            clean_text = sanitize_error_text(resp.text[:200])
-            raise LLMAPIError(f"Groq API returned HTTP {resp.status_code}: {clean_text}")
+        elif last_resp.status_code != 200:
+            clean_text = sanitize_error_text(last_resp.text[:200])
+            raise LLMAPIError(f"Groq API returned HTTP {last_resp.status_code}: {clean_text}")
 
         try:
-            data = resp.json()
+            data = last_resp.json()
             return data["choices"][0]["message"]["content"]
         except Exception as e:
             raise LLMAPIError(f"Failed to parse Groq response: {str(e)}") from e
+
+    def generate_stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 1500,
+        temperature: float = 0.2,
+    ):
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        models_to_try = self._get_candidate_models()
+        streamed_any = False
+
+        with httpx.Client(timeout=self.timeout) as client:
+            for model in models_to_try:
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stream": True,
+                }
+                try:
+                    with client.stream("POST", url, headers=headers, json=payload) as response:
+                        if response.status_code == 200:
+                            import json
+                            for line in response.iter_lines():
+                                line_str = line.strip()
+                                if line_str.startswith("data: ") and line_str != "data: [DONE]":
+                                    try:
+                                        data = json.loads(line_str[6:].strip())
+                                        delta = data.get("choices", [{}])[0].get("delta", {})
+                                        content = delta.get("content", "")
+                                        if content:
+                                            streamed_any = True
+                                            yield content
+                                    except Exception:
+                                        pass
+                            if streamed_any:
+                                break
+                        elif response.status_code in (404, 429, 503):
+                            logger.warning(
+                                f"Groq streaming {model} returned HTTP {response.status_code}. Trying next candidate..."
+                            )
+                            continue
+                        else:
+                            break
+                except Exception as e:
+                    logger.warning(f"Groq SSE streaming error on {model} ({e}). Trying next candidate...")
+                    continue
+
+        if not streamed_any:
+            full_text = self.generate_response(system_prompt, user_prompt, max_tokens, temperature)
+            words = re.findall(r"\S+|\s+", full_text)
+            for w in words:
+                yield w
 
 
 class MockLLMProvider(BaseLLMProvider):
