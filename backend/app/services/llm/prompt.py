@@ -312,7 +312,7 @@ def build_voice_prompt(
     chunks: list[Union[CodeChunk, SearchResult]],
     history: Optional[list[ChatMessage]] = None,
     repo_name: Optional[str] = None,
-    max_total_chars: Optional[int] = 8000,
+    max_total_chars: Optional[int] = 3500,
 ) -> tuple[str, str]:
     """
     Builds the (system_prompt, user_prompt) tuple specifically tailored for spoken audio voice dialogue.
@@ -345,7 +345,7 @@ def build_voice_prompt(
         f"{evidence_text}\n"
         f"--------------------------------\n\n"
         f"DEVELOPER SPOKE:\n\"{question.strip()}\"\n\n"
-        f"Synthesize a direct 2-4 sentence spoken answer for text-to-speech. Remember: NO markdown, NO asterisks, NO bullet points, NO citation brackets.{lang_directive}"
+        f"Synthesize a direct, concise 1-3 sentence spoken answer (under 40 words) for real-time voice call. Be natural, punchy, and direct. Remember: NO markdown, NO asterisks, NO bullet points, NO citation brackets.{lang_directive}"
     )
 
     return VOICE_SYSTEM_PROMPT, user_prompt

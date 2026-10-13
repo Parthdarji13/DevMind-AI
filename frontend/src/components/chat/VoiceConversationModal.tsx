@@ -77,6 +77,8 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const latestTranscriptRef = useRef<string>("");
+  const initialHistoryRef = useRef<ChatMessage[]>([]);
+  const sessionTurnsRef = useRef<ChatMessage[]>([]);
 
   const updatePhase = useCallback((newPhase: CallPhase) => {
     callPhaseRef.current = newPhase;
@@ -171,15 +173,16 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
           setUserTranscript(cleaned);
           latestTranscriptRef.current = cleaned;
 
-          // Hands-free VAD: 1.8s silence debounce gives natural breath room
+          // Hands-free VAD: Fast 650ms debounce for final sentence, 850ms for interim
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          const debounceDelay = final.trim().length > 0 ? 650 : 850;
           silenceTimerRef.current = setTimeout(() => {
             const queryToSend = latestTranscriptRef.current.trim();
             if (queryToSend.length >= 2) {
               latestTranscriptRef.current = "";
               submitVoiceQuery(queryToSend);
             }
-          }, 1800);
+          }, debounceDelay);
         }
       };
 
@@ -269,7 +272,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
 
         utterance.onend = () => {
           activeUtteranceRef.current = null;
-          // Echo prevention cooldown: wait 600ms before auto-listening for next follow-up question
+          // Echo prevention cooldown: 400ms before auto-listening for next follow-up question
           updatePhase("cooldown");
           if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
           cooldownTimerRef.current = setTimeout(() => {
@@ -279,7 +282,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
             } else {
               updatePhase("idle");
             }
-          }, 600);
+          }, 400);
         };
 
         utterance.onerror = (e) => {
@@ -316,7 +319,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
 
           audio.onended = () => {
             audioPlayerRef.current = null;
-            // Echo prevention cooldown: 600ms room silence before opening mic for follow-up
+            // Echo prevention cooldown: 400ms room silence before opening mic for follow-up
             updatePhase("cooldown");
             if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
             cooldownTimerRef.current = setTimeout(() => {
@@ -326,7 +329,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
               } else {
                 updatePhase("idle");
               }
-            }, 600);
+            }, 400);
           };
 
           audio.onerror = (err) => {
@@ -369,7 +372,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
 
       try {
         // Combine initial workspace history + turns from this live voice call for follow-up context!
-        const fullHistory = [...history, ...voiceHistory];
+        const fullHistory = [...initialHistoryRef.current, ...sessionTurnsRef.current];
 
         const currentUser = getStoredUser();
         const res = await askVoiceQuestion({
@@ -389,11 +392,12 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
         }
 
         // Add to voice session memory so follow-up questions understand context!
-        setVoiceHistory((prev) => [
-          ...prev,
-          { role: "user", content: q },
-          { role: "assistant", content: res.answer },
-        ]);
+        const newTurns = [
+          { role: "user" as const, content: q },
+          { role: "assistant" as const, content: res.answer },
+        ];
+        sessionTurnsRef.current.push(...newTurns);
+        setVoiceHistory([...sessionTurnsRef.current]);
 
         // Sync turn back to chat workspace thread
         if (onSyncTurn) {
@@ -410,7 +414,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
         playNeuralAudio(null, fallbackMsg);
       }
     },
-    [repo.repo_id, history, voiceHistory, onSyncTurn, stopListening, stopAllAudio, updatePhase, playNeuralAudio]
+    [repo.repo_id, onSyncTurn, stopListening, stopAllAudio, updatePhase, playNeuralAudio]
   );
 
   // Audio Visualizer for reactive orb
@@ -530,12 +534,15 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
   // Modal open / close lifecycle
   useEffect(() => {
     if (isOpen) {
+      initialHistoryRef.current = [...history];
+      sessionTurnsRef.current = [];
+      setVoiceHistory([]);
       setupAudioVisualizer();
       setTimeout(() => {
         if (!isMuted) {
           startListening();
         }
-      }, 300);
+      }, 200);
     } else {
       stopListening();
       stopAllAudio();
@@ -544,6 +551,7 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
       setUserTranscript("");
       setAiAnswer("");
       setLastAudioBase64(null);
+      sessionTurnsRef.current = [];
       setVoiceHistory([]);
       updatePhase("idle");
     }

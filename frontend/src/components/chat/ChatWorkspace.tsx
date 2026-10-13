@@ -394,8 +394,8 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
 
   const handleSyncVoiceTurn = (question: string, spokenAnswer: string, citedFiles: string[]) => {
     const nowTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const userMsgId = `voice-user-${Date.now()}`;
-    const assistantMsgId = `voice-ast-${Date.now()}`;
+    const userMsgId = `voice-user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const assistantMsgId = `voice-ast-${Date.now() + 1}-${Math.random().toString(36).substring(2, 7)}`;
 
     const userMsg: ChatMessageDisplay = {
       id: userMsgId,
@@ -417,9 +417,40 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
       timestamp: nowTime,
     };
 
-    const allTurns = [...messages, userMsg, assistantMsg];
-    setMessages(allTurns);
-    syncSessionMessages(activeSessionId, allTurns, question);
+    const newTurns: ChatMessageDisplay[] = [userMsg, assistantMsg];
+
+    // 1. Update live messages state
+    setMessages((prev) => [...prev, ...newTurns]);
+
+    // 2. Persist directly to active session and localStorage
+    setSessions((prevSessions) => {
+      const currentId = activeSessionId || (prevSessions.length > 0 ? prevSessions[0].id : null);
+      if (!currentId) return prevSessions;
+
+      const updated = prevSessions.map((s) => {
+        if (s.id === currentId) {
+          let title = s.title;
+          if (
+            (title === "New Chat" || title === "Untitled Chat") &&
+            question &&
+            question.trim()
+          ) {
+            const clean = question.replace(/^[🎙️\s!]+/, "").trim();
+            title = clean.length > 36 ? `${clean.slice(0, 36)}...` : clean;
+          }
+          return {
+            ...s,
+            messages: [...(s.messages || []), ...newTurns],
+            title,
+            updatedAt: Date.now(),
+          };
+        }
+        return s;
+      });
+
+      saveStoredSessions(repo.repo_id, updated);
+      return updated;
+    });
   };
 
   return (

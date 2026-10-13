@@ -65,14 +65,14 @@ def synthesize_tts_mp3(text: str, language: str = "english") -> Optional[str]:
 
         if loop and loop.is_running():
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                audio_bytes = pool.submit(asyncio.run, _gen()).result(timeout=12)
+                audio_bytes = pool.submit(asyncio.run, _gen()).result(timeout=2.0)
         else:
             audio_bytes = asyncio.run(_gen())
 
         if audio_bytes:
             return base64.b64encode(audio_bytes).decode("utf-8")
     except Exception as e:
-        logger.warning(f"edge-tts audio synthesis warning: {e}")
+        logger.debug(f"edge-tts fast synthesis bypassed: {e}")
 
     return None
 

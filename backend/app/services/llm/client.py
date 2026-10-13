@@ -86,7 +86,7 @@ class BaseLLMProvider(ABC):
 class GeminiLLMProvider(BaseLLMProvider):
     """Google Gemini provider (gemini-1.5-flash / gemini-2.0-flash / gemini-1.5-pro)."""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-flash-latest", timeout: float = 60.0):
+    def __init__(self, api_key: str, model_name: str = "gemini-flash-lite-latest", timeout: float = 60.0):
         if not api_key or api_key.startswith("your_"):
             raise LLMConfigurationError("GEMINI_API_KEY is not configured or contains placeholder value.")
         self.api_key = api_key
@@ -113,9 +113,9 @@ class GeminiLLMProvider(BaseLLMProvider):
             },
         }
 
-        # Candidate models with automatic fallback on 404/503/429
+        # Candidate models with automatic fallback: try fast gemini-flash-lite-latest first
         models_to_try = [self.model_name]
-        for fallback in ["gemini-flash-latest", "gemini-flash-lite-latest"]:
+        for fallback in ["gemini-flash-lite-latest", "gemini-flash-latest"]:
             if fallback not in models_to_try:
                 models_to_try.append(fallback)
 
