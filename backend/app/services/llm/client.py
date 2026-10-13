@@ -84,9 +84,9 @@ class BaseLLMProvider(ABC):
 
 
 class GeminiLLMProvider(BaseLLMProvider):
-    """Google Gemini provider (gemini-1.5-flash / gemini-2.0-flash / gemini-1.5-pro)."""
+    """Google Gemini provider (gemini-3.5-flash / gemini-3.5-flash-lite)."""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-flash-lite-latest", timeout: float = 60.0):
+    def __init__(self, api_key: str, model_name: str = "gemini-3.5-flash", timeout: float = 60.0):
         if not api_key or api_key.startswith("your_"):
             raise LLMConfigurationError("GEMINI_API_KEY is not configured or contains placeholder value.")
         self.api_key = api_key
@@ -113,11 +113,22 @@ class GeminiLLMProvider(BaseLLMProvider):
             },
         }
 
-        # Candidate models with automatic fallback: try fast gemini-flash-lite-latest first
-        models_to_try = [self.model_name]
-        for fallback in ["gemini-flash-lite-latest", "gemini-flash-latest"]:
-            if fallback not in models_to_try:
-                models_to_try.append(fallback)
+        # Candidate models with automatic fallback: prioritize live gemini-3.5-flash
+        candidates = []
+        if self.model_name and self.model_name not in (
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash",
+        ):
+            candidates.append(self.model_name)
+        candidates.extend(["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest"])
+
+        models_to_try = []
+        for m in candidates:
+            if m not in models_to_try:
+                models_to_try.append(m)
 
         last_resp = None
         last_error = None
@@ -200,7 +211,19 @@ class GeminiLLMProvider(BaseLLMProvider):
             },
         }
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:streamGenerateContent?alt=sse"
+        primary_model = (
+            "gemini-3.5-flash"
+            if self.model_name
+            in (
+                "gemini-flash-latest",
+                "gemini-flash-lite-latest",
+                "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-2.5-flash",
+            )
+            else self.model_name
+        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{primary_model}:streamGenerateContent?alt=sse"
         streamed_any = False
         try:
             with httpx.Client(timeout=self.timeout) as client:

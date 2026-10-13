@@ -335,12 +335,32 @@ class QAService:
             accumulated_answer.append(prefix_tok)
             yield f"event: token\ndata: {json.dumps({'token': prefix_tok})}\n\n"
 
+        stream_err: Optional[Exception] = None
         try:
             for token in provider.generate_stream(sys_prompt, user_prompt):
                 accumulated_answer.append(token)
                 yield f"event: token\ndata: {json.dumps({'token': token})}\n\n"
         except Exception as e:
             logger.error(f"Streaming token generation error: {e}", exc_info=True)
+            stream_err = e
+
+        # If generation yielded nothing (e.g. rate limit or API error), provide clear user feedback
+        # rather than letting the UI show an empty white bubble
+        non_prefix_tokens = accumulated_answer[1:] if greeting_inquiry else accumulated_answer
+        if not non_prefix_tokens:
+            err_str = str(stream_err).lower() if stream_err else ""
+            if "429" in err_str or "rate limit" in err_str or "quota" in err_str:
+                fallback_msg = (
+                    "The AI model quota is temporarily reached on Google Gemini. "
+                    "Please wait a few moments and try asking your question again."
+                )
+            else:
+                fallback_msg = (
+                    "I encountered a temporary issue generating a response from the codebase. "
+                    "Please try asking your question again in a moment."
+                )
+            accumulated_answer.append(fallback_msg)
+            yield f"event: token\ndata: {json.dumps({'token': fallback_msg})}\n\n"
 
         full_answer = "".join(accumulated_answer)
 
@@ -519,7 +539,19 @@ class QAService:
 
         # 7. Generate response via LLM
         provider = self._get_provider()
-        raw_answer = provider.generate_response(sys_prompt, user_prompt)
+        try:
+            raw_answer = provider.generate_response(sys_prompt, user_prompt)
+        except LLMRateLimitError:
+            raw_answer = (
+                "The AI service is experiencing a temporary rate limit. "
+                "Please wait a few seconds and try speaking your question again."
+            )
+        except Exception as e:
+            logger.error(f"Error generating voice response: {e}", exc_info=True)
+            raw_answer = (
+                "I encountered a temporary issue generating a response from the codebase. "
+                "Please try speaking your question again."
+            )
 
         # 8. Clean response specifically for text-to-speech
         spoken_answer = clean_for_speech(raw_answer)
