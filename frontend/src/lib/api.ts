@@ -18,7 +18,7 @@ import {
   VoiceChatResponse,
   RepoFilesResponse,
 } from "./types";
-import { getStoredToken, getStoredUser } from "./auth";
+import { getStoredToken, getStoredUser, loginAsGuest } from "./auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -29,8 +29,24 @@ export class ApiError extends Error {
   }
 }
 
-function getAuthHeaders(): Record<string, string> {
+export function getAuthHeaders(): Record<string, string> {
   const token = getStoredToken();
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
+
+export async function getAuthHeadersAsync(): Promise<Record<string, string>> {
+  let token = getStoredToken();
+  if (!token) {
+    try {
+      await loginAsGuest();
+      token = getStoredToken();
+    } catch (e) {
+      console.warn("Could not auto-login as guest:", e);
+    }
+  }
   if (token) {
     return { Authorization: `Bearer ${token}` };
   }
@@ -237,11 +253,12 @@ export async function askChatQuestion(request: ChatRequest): Promise<ChatRespons
       ...request,
       user_name: request.user_name || user?.name || user?.id || "Parth",
     };
+    const authHeaders = await getAuthHeadersAsync();
     const res = await fetch(`${API_BASE}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...getAuthHeaders(),
+        ...authHeaders,
       },
       body: JSON.stringify(payload),
     });
@@ -283,11 +300,12 @@ export async function askChatQuestionStream(
       ...request,
       user_name: request.user_name || user?.name || user?.id || "Parth",
     };
+    const authHeaders = await getAuthHeadersAsync();
     const res = await fetch(`${API_BASE}/api/chat/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...getAuthHeaders(),
+        ...authHeaders,
       },
       body: JSON.stringify(payload),
     });
@@ -629,11 +647,12 @@ export async function askVoiceQuestion(req: VoiceChatRequest): Promise<VoiceChat
       ...req,
       user_name: req.user_name || user?.name || user?.id || "Parth",
     };
+    const authHeaders = await getAuthHeadersAsync();
     const res = await fetch(`${API_BASE}/api/chat/voice`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...getAuthHeaders(),
+        ...authHeaders,
       },
       body: JSON.stringify(payload),
     });

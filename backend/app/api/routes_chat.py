@@ -83,14 +83,16 @@ async def ask_question(
             detail="Repository ID must be specified.",
         )
 
-    require_repo_access(repo_id, user)
+    require_repo_access(repo_id, user, allow_unowned_read=True)
 
-    store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
-    if not store.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Repository '{repo_id}' has not been indexed yet or index is missing.",
-        )
+    from ..services.llm.greeting import is_pure_greeting
+    if not is_pure_greeting(q_stripped):
+        store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
+        if not store.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Repository '{repo_id}' has not been indexed yet or index is missing.",
+            )
 
     # 3. Process question through QA service
     try:
@@ -181,7 +183,7 @@ async def get_suggested_questions(
             detail="Repository ID cannot be empty.",
         )
 
-    require_repo_access(repo_id_clean, user)
+    require_repo_access(repo_id_clean, user, allow_unowned_read=True)
 
     store = PersistentIndexStore(repo_id_clean)
     if not store.exists():
@@ -213,7 +215,7 @@ def get_repository_files(
             detail="Repository ID cannot be empty.",
         )
 
-    require_repo_access(repo_id_clean, user)
+    require_repo_access(repo_id_clean, user, allow_unowned_read=True)
 
     store = qa_service.retrieval_manager.storage_manager.get_store(repo_id_clean)
     if not store.exists():
@@ -264,7 +266,7 @@ def get_chat_history(
 ):
     """Retrieves recorded chat turns for a repository from MongoDB if available."""
     repo_id_clean = repo_id.strip()
-    require_repo_access(repo_id_clean, user)
+    require_repo_access(repo_id_clean, user, allow_unowned_read=True)
     if is_mongo_available():
         return MongoStorage.get_chat_history(repo_id_clean, session_id)
     return []
@@ -299,14 +301,16 @@ async def chat_question_stream(
             detail="Repository ID must be specified.",
         )
 
-    require_repo_access(repo_id, user)
+    require_repo_access(repo_id, user, allow_unowned_read=True)
 
-    store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
-    if not store.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Repository '{repo_id}' has not been indexed yet or index is missing.",
-        )
+    from ..services.llm.greeting import is_pure_greeting
+    if not is_pure_greeting(q_stripped):
+        store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
+        if not store.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Repository '{repo_id}' has not been indexed yet or index is missing.",
+            )
 
     generator = qa_service.answer_question_stream(request, user=user, user_id=user.id if user else None)
     return StreamingResponse(
@@ -329,7 +333,7 @@ def submit_chat_feedback(
     user: UserContext = Depends(get_current_user),
 ):
     """Stores user thumbs-up/down ratings and quality reports in MongoDB Atlas."""
-    require_repo_access(feedback.repo_id, user)
+    require_repo_access(feedback.repo_id, user, allow_unowned_read=True)
     record = feedback.model_dump()
     record["user_id"] = user.id if user else None
 
@@ -354,7 +358,7 @@ def get_flow_trace(
     user: UserContext = Depends(get_current_user),
     service: AdvancedFeaturesService = Depends(get_advanced_features_service),
 ) -> FlowTraceResponse:
-    require_repo_access(request.repo_id, user)
+    require_repo_access(request.repo_id, user, allow_unowned_read=True)
     return service.trace_flow(request.repo_id, request.flow_query)
 
 
@@ -368,7 +372,7 @@ def get_onboarding_doc(
     user: UserContext = Depends(get_current_user),
     service: AdvancedFeaturesService = Depends(get_advanced_features_service),
 ) -> OnboardingDocResponse:
-    require_repo_access(request.repo_id, user)
+    require_repo_access(request.repo_id, user, allow_unowned_read=True)
     return service.generate_onboarding_doc(request.repo_id)
 
 
@@ -382,7 +386,7 @@ def get_architecture_map(
     user: UserContext = Depends(get_current_user),
     service: AdvancedFeaturesService = Depends(get_advanced_features_service),
 ) -> ArchitectureMapResponse:
-    require_repo_access(repo_id, user)
+    require_repo_access(repo_id, user, allow_unowned_read=True)
     return service.build_architecture_map(repo_id)
 
 
@@ -396,7 +400,7 @@ def get_learning_quiz(
     user: UserContext = Depends(get_current_user),
     service: AdvancedFeaturesService = Depends(get_advanced_features_service),
 ) -> QuizResponse:
-    require_repo_access(repo_id, user)
+    require_repo_access(repo_id, user, allow_unowned_read=True)
     return service.generate_learning_quiz(repo_id)
 
 
@@ -434,14 +438,16 @@ async def ask_voice_question(
             detail="Repository ID must be specified.",
         )
 
-    require_repo_access(repo_id, user)
+    require_repo_access(repo_id, user, allow_unowned_read=True)
 
-    store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
-    if not store.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Repository '{repo_id}' has not been indexed yet or index is missing.",
-        )
+    from ..services.llm.greeting import is_pure_greeting
+    if not is_pure_greeting(q_stripped):
+        store = qa_service.retrieval_manager.storage_manager.get_store(repo_id)
+        if not store.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Repository '{repo_id}' has not been indexed yet or index is missing on server.",
+            )
 
     try:
         user_identifier = getattr(user, "id", None) or getattr(user, "user_id", None)

@@ -19,7 +19,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { IngestResponse, ChatMessage } from "@/lib/types";
-import { askVoiceQuestion } from "@/lib/api";
+import { askVoiceQuestion, ApiError } from "@/lib/api";
 import { getStoredUser } from "@/lib/auth";
 
 interface VoiceConversationModalProps {
@@ -477,10 +477,31 @@ export const VoiceConversationModal: React.FC<VoiceConversationModalProps> = ({
         playNeuralAudio(res.audio_base64, res.answer);
       } catch (err: any) {
         console.error("Voice inquiry error:", err);
-        const fallbackMsg =
+        let errorMsg =
           "I ran into an issue retrieving that from the codebase. Please try speaking your question again.";
-        setAiAnswer(fallbackMsg);
-        playNeuralAudio(null, fallbackMsg);
+        if (err instanceof ApiError) {
+          if (err.status === 401) {
+            errorMsg = "Authentication required. Please sign in or use guest login to use voice call.";
+          } else if (err.status === 403) {
+            errorMsg = "Access denied. You do not have permission to access this repository.";
+          } else if (err.status === 404) {
+            errorMsg = "Repository index not found on server. Please re-index the repository or return home.";
+          } else if (err.status === 429) {
+            errorMsg = "AI rate limit reached. Please wait a few moments and try again.";
+          } else if (err.status === 502 || err.status === 503 || err.status === 504) {
+            errorMsg = "The backend server is currently waking up or busy. Please retry in a few moments.";
+          } else if (err.message && !err.message.includes("status")) {
+            errorMsg = err.message;
+          }
+        } else if (err instanceof Error && err.message) {
+          if (err.message.includes("Failed to fetch") || err.message.includes("Network")) {
+            errorMsg = "Connecting to backend server... If server is waking up, please retry in 10 seconds.";
+          } else {
+            errorMsg = err.message;
+          }
+        }
+        setAiAnswer(errorMsg);
+        playNeuralAudio(null, errorMsg);
       }
     },
     [repo.repo_id, onSyncTurn, stopListening, stopAllAudio, updatePhase, playNeuralAudio]
