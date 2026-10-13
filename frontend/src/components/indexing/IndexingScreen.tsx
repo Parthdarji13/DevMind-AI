@@ -144,15 +144,28 @@ export const IndexingScreen: React.FC<IndexingScreenProps> = ({
           </p>
         </div>
 
-        {/* Action Button: New Repository */}
-        <button
-          type="button"
-          onClick={onNewRepo}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg border border-[#D6D2CA] text-[#1C2024] hover:bg-[#F9F8F6] transition-colors cursor-pointer self-start sm:self-auto"
-        >
-          <FolderGit2 className="w-4 h-4 text-[#636A74]" />
-          <span>New Repository</span>
-        </button>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          {isReady && (
+            <button
+              type="button"
+              onClick={onOpenChat}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-[#0B6E5F] hover:bg-[#085449] text-white transition-colors shadow-xs cursor-pointer"
+            >
+              <span>Open Chat</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onNewRepo}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg border border-[#D6D2CA] text-[#1C2024] hover:bg-[#F9F8F6] transition-colors cursor-pointer"
+          >
+            <FolderGit2 className="w-4 h-4 text-[#636A74]" />
+            <span>New Repository</span>
+          </button>
+        </div>
       </div>
 
       {/* Failed Alert Box */}

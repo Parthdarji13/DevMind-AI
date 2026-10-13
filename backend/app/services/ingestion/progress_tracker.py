@@ -111,6 +111,8 @@ class ProgressTracker:
         idx = step_number - 1
         progress.stages[idx].status = StageStatus.DONE
         progress.stages[idx].detail = detail
+        if progress.stages[idx].total_count is not None:
+            progress.stages[idx].current_count = progress.stages[idx].total_count
         completed = sum(1 for s in progress.stages if s.status == StageStatus.DONE)
         progress.percentage = completed * 20
         if step_number < 5:

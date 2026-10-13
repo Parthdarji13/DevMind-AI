@@ -117,16 +117,18 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({
                     </span>
 
                     {/* Live counter if available */}
-                    {typeof stage.current_count === "number" &&
-                      typeof stage.total_count === "number" &&
-                      stage.total_count > 0 && (
-                        <span className="font-mono text-xs font-semibold text-[#0B6E5F] bg-[#E6F4F1] px-2 py-0.5 rounded-md border border-[#BDE3DC] inline-flex items-center gap-1">
-                          <span>{stage.current_count} of {stage.total_count}</span>
-                          <span className="text-[10px] text-[#0B6E5F]/70">
-                            ({Math.round((stage.current_count / stage.total_count) * 100)}%)
-                          </span>
+                    {typeof stage.total_count === "number" && stage.total_count > 0 && (
+                      <span className="font-mono text-xs font-semibold text-[#0B6E5F] bg-[#E6F4F1] px-2 py-0.5 rounded-md border border-[#BDE3DC] inline-flex items-center gap-1">
+                        <span>
+                          {stage.status === "done"
+                            ? `${stage.total_count} of ${stage.total_count}`
+                            : `${stage.current_count ?? 0} of ${stage.total_count}`}
                         </span>
-                      )}
+                        <span className="text-[10px] text-[#0B6E5F]/70">
+                          ({stage.status === "done" ? 100 : Math.round(((stage.current_count ?? 0) / stage.total_count) * 100)}%)
+                        </span>
+                      </span>
+                    )}
                   </div>
 
                   <p className="text-xs text-[#636A74] mt-0.5 leading-relaxed">
